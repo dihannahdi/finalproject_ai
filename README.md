@@ -56,7 +56,7 @@ StockPred Master is a Next.js-based web application that integrates financial da
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/stockpred-master.git
+   git clone https://github.com/dihannahdi/finalproject_ai.git
    cd stockpred-master
    ```
 
