@@ -68,11 +68,13 @@ StockPred Master is a Next.js-based web application that integrates financial da
    ```
 
 3. Configure API keys:
-   - Obtain an API key from Alpha Vantage (https://www.alphavantage.co/)
-   - Add your API key to the `.env.local` file:
+   - Obtain a free API key from Alpha Vantage (https://www.alphavantage.co/support/#api-key)
+   - Create a `.env.local` file in the root directory with:
      ```
-     ALPHA_VANTAGE_API_KEY=your_api_key_here
+     NEXT_PUBLIC_ALPHA_VANTAGE_API_KEY=your_api_key_here
      ```
+   - Note: Without an API key, the application will use "demo" mode with limited functionality and sample data
+   - Free API keys have rate limits (5 API calls per minute and 500 calls per day)
 
 4. Start the development server:
    ```bash
@@ -92,7 +94,12 @@ stockpred-master/
 │   ├── components/    # React components
 │   ├── hooks/         # Custom React hooks
 │   ├── lib/           # Utilities and API clients
+│   │   └── api.ts     # Alpha Vantage API integration
 │   ├── models/        # ML model definitions
+│   │   ├── index.ts   # Model exports
+│   │   └── LSTMModel/ # LSTM implementation
+│   ├── dashboard/     # Dashboard page
+│   │   └── page.tsx   # Main dashboard UI
 │   ├── styles/        # Global styles
 │   └── utils/         # Helper functions
 ├── public/            # Static assets

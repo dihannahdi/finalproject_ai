@@ -20,13 +20,13 @@ export interface LSTMModelParams {
  * Default parameters for the LSTM model
  */
 export const DEFAULT_LSTM_PARAMS: LSTMModelParams = {
-  timeSteps: 20,
+  timeSteps: 10,
   features: ['close'],
-  epochs: 50,
+  epochs: 20,
   batchSize: 32,
   learningRate: 0.001,
-  hiddenLayers: [50, 50],
-  dropoutRate: 0.2,
+  hiddenLayers: [16, 8],
+  dropoutRate: 0.2
 };
 
 export class LSTMModel {

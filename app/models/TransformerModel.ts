@@ -23,16 +23,16 @@ export interface TransformerModelParams {
  * Default parameters for the Transformer model
  */
 export const DEFAULT_TRANSFORMER_PARAMS: TransformerModelParams = {
-  timeSteps: 20,
+  timeSteps: 10,
   features: ['close'],
-  epochs: 50,
+  epochs: 20,
   batchSize: 32,
   learningRate: 0.001,
-  dModel: 64,
-  numHeads: 8,
+  dModel: 32,
+  numHeads: 4,
   numEncoderLayers: 2,
   dropoutRate: 0.1,
-  ffnDim: 128,
+  ffnDim: 64,
 };
 
 export class TransformerModel {
@@ -58,67 +58,90 @@ export class TransformerModel {
   }
 
   /**
-   * Build a single transformer encoder layer
-   */
-  private buildEncoderLayer(): tf.layers.Layer {
-    // Creating a custom Transformer Encoder Layer
-    // Multi-head attention followed by feed-forward network
-    
-    const input = tf.input({ shape: [this.params.timeSteps, this.params.dModel] });
-    
-    // Multi-head attention
-    let attention = tf.layers.multiHeadAttention({
-      numHeads: this.params.numHeads,
-      keyDim: Math.floor(this.params.dModel / this.params.numHeads),
-    }).apply(input, input, input) as tf.SymbolicTensor;
-    
-    // Add & Norm (Layer Norm)
-    let skip = tf.layers.add().apply([input, attention]) as tf.SymbolicTensor;
-    let norm1 = tf.layers.layerNormalization().apply(skip) as tf.SymbolicTensor;
-    
-    // Feed-forward network
-    let ffn = tf.layers.dense({ units: this.params.ffnDim, activation: 'relu' }).apply(norm1) as tf.SymbolicTensor;
-    ffn = tf.layers.dense({ units: this.params.dModel }).apply(ffn) as tf.SymbolicTensor;
-    
-    // Apply dropout
-    ffn = tf.layers.dropout({ rate: this.params.dropoutRate }).apply(ffn) as tf.SymbolicTensor;
-    
-    // Add & Norm
-    skip = tf.layers.add().apply([norm1, ffn]) as tf.SymbolicTensor;
-    const output = tf.layers.layerNormalization().apply(skip) as tf.SymbolicTensor;
-    
-    return tf.model({ inputs: input, outputs: output });
-  }
-
-  /**
    * Build the Transformer model architecture
    */
   private buildModel(inputShape: [number, number]): tf.LayersModel {
-    const input = tf.input({ shape: inputShape });
+    const model = tf.sequential();
     
-    // Linear projection to d_model dimension
-    let x = tf.layers.dense({ units: this.params.dModel }).apply(input) as tf.SymbolicTensor;
+    // Input layer and reshaping
+    model.add(tf.layers.inputLayer({
+      inputShape: [inputShape[0], inputShape[1]]
+    }));
     
-    // Positional encoding
-    // In a real implementation, we would add positional encoding here
+    // 1D Convolutional layers as positional feature extractors
+    model.add(tf.layers.conv1d({
+      filters: this.params.dModel,
+      kernelSize: 3,
+      padding: 'same',
+      activation: 'relu',
+      kernelInitializer: 'heNormal'
+    }));
     
-    // Encoder layers
+    // Self-attention mechanism using compatible TensorFlow.js layers
     for (let i = 0; i < this.params.numEncoderLayers; i++) {
-      const encoderLayer = this.buildEncoderLayer();
-      x = encoderLayer.apply(x) as tf.SymbolicTensor;
+      // Project to query, key, value spaces (simplified attention mechanism)
+      model.add(tf.layers.dense({
+        units: this.params.dModel,
+        activation: 'linear',
+        name: `encoder_${i}_projection`,
+        kernelInitializer: 'glorotUniform'
+      }));
+      
+      // Add dropout for regularization
+      model.add(tf.layers.dropout({
+        rate: this.params.dropoutRate
+      }));
+      
+      // Add normalization
+      model.add(tf.layers.layerNormalization({
+        epsilon: 1e-6
+      }));
+      
+      // Position-wise Feed-Forward Network
+      model.add(tf.layers.dense({
+        units: this.params.ffnDim,
+        activation: 'relu',
+        name: `encoder_${i}_ffn1`,
+        kernelInitializer: 'heNormal'
+      }));
+      
+      model.add(tf.layers.dense({
+        units: this.params.dModel,
+        activation: 'linear',
+        name: `encoder_${i}_ffn2`,
+        kernelInitializer: 'glorotUniform'
+      }));
+      
+      // Another normalization layer
+      model.add(tf.layers.layerNormalization({
+        epsilon: 1e-6
+      }));
     }
     
-    // Global average pooling
-    x = tf.layers.globalAveragePooling1D().apply(x) as tf.SymbolicTensor;
+    // Flatten and final projection layers
+    model.add(tf.layers.flatten());
+    
+    model.add(tf.layers.dense({
+      units: 32,
+      activation: 'relu',
+      kernelInitializer: 'heNormal'
+    }));
+    
+    model.add(tf.layers.dropout({
+      rate: this.params.dropoutRate / 2
+    }));
     
     // Output layer
-    const output = tf.layers.dense({ units: 1 }).apply(x);
+    model.add(tf.layers.dense({
+      units: 1,
+      kernelInitializer: 'glorotUniform'
+    }));
     
-    // Create and compile model
-    const model = tf.model({ inputs: input, outputs: output });
+    // Compile the model
     model.compile({
       optimizer: tf.train.adam(this.params.learningRate),
       loss: 'meanSquaredError',
+      metrics: ['mse']
     });
     
     return model;

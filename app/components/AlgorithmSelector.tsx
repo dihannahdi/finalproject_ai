@@ -63,7 +63,7 @@ const AlgorithmSelector: React.FC<AlgorithmSelectorProps> = ({
               <li>Highly effective for long-range dependencies</li>
             </>
           )}
-          {selectedAlgorithm.id === 'cnn_lstm' && (
+          {selectedAlgorithm.id === 'cnnlstm' && (
             <>
               <li>Combines CNN feature extraction with LSTM temporal modeling</li>
               <li>Captures both spatial and temporal patterns</li>
@@ -87,7 +87,7 @@ const AlgorithmSelector: React.FC<AlgorithmSelectorProps> = ({
               <li>Fast training and inference</li>
             </>
           )}
-          {selectedAlgorithm.id === 'stacking' && (
+          {selectedAlgorithm.id === 'ensemble' && (
             <>
               <li>Combines multiple base models</li>
               <li>Leverages strengths of various algorithms</li>
@@ -167,7 +167,7 @@ function getPerformanceMetric(algorithmId: string, metric: string): number {
       complexity: 95,
       adaptability: 85
     },
-    cnn_lstm: {
+    cnnlstm: {
       accuracy: 87,
       speed: 65,
       complexity: 85,
@@ -185,13 +185,13 @@ function getPerformanceMetric(algorithmId: string, metric: string): number {
       complexity: 70,
       adaptability: 75
     },
-    stacking: {
+    ensemble: {
       accuracy: 92,
       speed: 60,
       complexity: 90,
       adaptability: 85
     }
-  };
+  } as Record<string, Record<string, number>>;
   
   return metrics[algorithmId]?.[metric] || 50;
 }

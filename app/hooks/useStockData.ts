@@ -45,11 +45,39 @@ export default function useStockData({
 
       // Fetch historical data
       const stockData = await fetchStockData(symbol, startDate, endDate);
+      if (!stockData || stockData.length === 0) {
+        throw new Error('No historical data available for the selected period');
+      }
       setHistoricalData(stockData);
 
       // Fetch real-time quote
-      const realtime = await fetchRealTimeStockData(symbol);
-      setRealtimeData(realtime);
+      try {
+        const realtime = await fetchRealTimeStockData(symbol);
+        if (realtime && realtime.price) {
+          setRealtimeData(realtime);
+        } else {
+          console.warn('Real-time data not available, using latest historical data point');
+          const latestData = stockData[stockData.length - 1];
+          setRealtimeData({
+            symbol,
+            price: latestData.close,
+            change: latestData.close - stockData[stockData.length - 2].close,
+            changePercent: ((latestData.close - stockData[stockData.length - 2].close) / stockData[stockData.length - 2].close * 100),
+            volume: latestData.volume
+          });
+        }
+      } catch (realtimeError) {
+        console.warn('Error fetching real-time data:', realtimeError);
+        // Fallback to latest historical data
+        const latestData = stockData[stockData.length - 1];
+        setRealtimeData({
+          symbol,
+          price: latestData.close,
+          change: latestData.close - stockData[stockData.length - 2].close,
+          changePercent: ((latestData.close - stockData[stockData.length - 2].close) / stockData[stockData.length - 2].close * 100),
+          volume: latestData.volume
+        });
+      }
 
       // Generate predictions
       if (stockData.length > 0) {
