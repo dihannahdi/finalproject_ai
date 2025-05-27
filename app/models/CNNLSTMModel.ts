@@ -204,35 +204,127 @@ export class CNNLSTMModel {
   }
 
   /**
-   * Train the model on the provided historical data
+   * Train the CNN-LSTM model with historical stock data
    */
   async train(data: StockDataPoint[]): Promise<tf.History> {
-    if (data.length < this.params.timeSteps + 10) {
-      throw new Error(`Not enough data points. Need at least ${this.params.timeSteps + 10} data points.`);
-    }
-    
-    this.isTraining = true;
-    
     try {
-      // Prepare features and scale data
-      const features: number[][] = [];
-      const targetValues: number[] = [];
-      
-      for (const point of data) {
-        const featureValues: number[] = [];
-        for (const feature of this.params.features) {
-          featureValues.push(point[feature as keyof StockDataPoint] as number);
-        }
-        features.push(featureValues);
-        targetValues.push(point.close);
+      if (this.isTraining) {
+        console.warn('Model is already training. Please wait for the current training to complete.');
+        throw new Error('Model is already training');
       }
       
-      // Fit scalers
-      this.inputScaler.fit(features);
-      this.outputScaler.fit(targetValues.map(v => [v]));
+      this.isTraining = true;
+      console.log(`[CNNLSTMModel] Starting training with ${data.length} data points`);
       
-      // Scale the data points
-      const scaledData = [...data];
+      try {
+        // Extract feature data
+        const featureData: number[][] = [];
+        const targetData: number[] = [];
+        
+        console.log(`[CNNLSTMModel] Extracting features: ${this.params.features.join(', ')}`);
+        
+        // Extract features from data
+        for (const point of data) {
+          const features: number[] = [];
+          for (const feature of this.params.features) {
+            const value = point[feature as keyof StockDataPoint] as number;
+            if (!isFinite(value)) {
+              // Handle invalid feature values
+              console.warn(`[CNNLSTMModel] Invalid ${feature} value found, using default`);
+              features.push(feature === 'volume' ? 1000000 : point.close);
+            } else {
+              features.push(value);
+            }
+          }
+          featureData.push(features);
+          targetData.push(point.close);
+        }
+        
+        // Fit scalers
+        console.log(`[CNNLSTMModel] Fitting scalers with ${featureData.length} data points`);
+        this.inputScaler.fit(featureData);
+        this.outputScaler.fit([[Math.min(...targetData)], [Math.max(...targetData)]]);
+        
+        // Scale the data points
+        const scaledData = [...data];
+        for (let i = 0; i < scaledData.length; i++) {
+          for (const feature of this.params.features) {
+            const value = scaledData[i][feature as keyof StockDataPoint] as number;
+            const featureIndex = this.featureIndices[feature];
+            const scaled = this.inputScaler.transformValue(value, featureIndex);
+            scaledData[i] = { ...scaledData[i], [feature]: scaled };
+          }
+          
+          scaledData[i] = {
+            ...scaledData[i],
+            close: this.outputScaler.transformValue(scaledData[i].close, 0),
+          };
+        }
+        
+        // Prepare training data
+        console.log(`[CNNLSTMModel] Preparing training data with timeSteps=${this.params.timeSteps}`);
+        const { X, y } = this.prepareTrainingData(scaledData);
+        
+        // Build model with the correct input shape
+        console.log(`[CNNLSTMModel] Building model with shape [${this.params.timeSteps}, ${this.params.features.length}]`);
+        this.model = this.buildModel([this.params.timeSteps, this.params.features.length]);
+        
+        // Train the model
+        console.log(`[CNNLSTMModel] Starting model training with ${this.params.epochs} epochs`);
+        const history = await this.model.fit(X, y, {
+          epochs: this.params.epochs,
+          batchSize: this.params.batchSize,
+          validationSplit: 0.1,
+          callbacks: {
+            onEpochBegin: (epoch) => {
+              console.log(`[CNNLSTMModel] Starting epoch ${epoch + 1}/${this.params.epochs}`);
+            },
+            onEpochEnd: (epoch, logs) => {
+              console.log(`[CNNLSTMModel] Epoch ${epoch + 1}/${this.params.epochs}, loss: ${logs?.loss.toFixed(6)}, val_loss: ${logs?.val_loss.toFixed(6)}`);
+            },
+          },
+        });
+        
+        console.log(`[CNNLSTMModel] Training completed successfully`);
+        
+        // Clean up tensors
+        X.dispose();
+        y.dispose();
+        
+        return history;
+      } finally {
+        this.isTraining = false;
+      }
+    } catch (error) {
+      console.error(`[CNNLSTMModel] Error during training:`, error);
+      this.isTraining = false;
+      throw error;
+    }
+  }
+
+  /**
+   * Generate price predictions using the trained CNN-LSTM model
+   */
+  async predict(data: StockDataPoint[], days: number = 30): Promise<PredictionPoint[]> {
+    try {
+      if (!this.model) {
+        console.error('[CNNLSTMModel] Model not trained yet');
+        throw new Error('Model not trained yet. Call train() first.');
+      }
+      
+      console.log(`[CNNLSTMModel] Starting prediction for ${days} days`);
+      
+      if (data.length < this.params.timeSteps) {
+        console.error(`[CNNLSTMModel] Not enough data points for prediction`);
+        throw new Error(`Not enough data points. Need at least ${this.params.timeSteps} data points.`);
+      }
+      
+      // Create a copy of the last timeSteps data points for prediction
+      const lastDataPoints = data.slice(-this.params.timeSteps);
+      console.log(`[CNNLSTMModel] Using last ${lastDataPoints.length} data points for prediction`);
+      
+      // Scale the input data
+      const scaledData = [...lastDataPoints];
       for (let i = 0; i < scaledData.length; i++) {
         for (const feature of this.params.features) {
           const value = scaledData[i][feature as keyof StockDataPoint] as number;
@@ -240,138 +332,82 @@ export class CNNLSTMModel {
           const scaled = this.inputScaler.transformValue(value, featureIndex);
           scaledData[i] = { ...scaledData[i], [feature]: scaled };
         }
+      }
+      
+      console.log(`[CNNLSTMModel] Making predictions for ${days} days ahead`);
+      
+      // Make predictions for the specified number of days
+      const predictions: PredictionPoint[] = [];
+      let currentSequence = scaledData;
+      
+      for (let i = 0; i < days; i++) {
+        // Prepare input for prediction
+        const sequence: number[][] = [];
+        for (let j = 0; j < this.params.timeSteps; j++) {
+          const featureValues: number[] = [];
+          for (const feature of this.params.features) {
+            featureValues.push(currentSequence[j][feature as keyof StockDataPoint] as number);
+          }
+          sequence.push(featureValues);
+        }
         
-        scaledData[i] = {
-          ...scaledData[i],
-          close: this.outputScaler.transformValue(scaledData[i].close, 0),
+        // Convert to tensor and make prediction
+        const input = tf.tensor3d([sequence], [1, this.params.timeSteps, this.params.features.length]);
+        const prediction = this.model.predict(input) as tf.Tensor;
+        const predictionValue = prediction.dataSync()[0];
+        
+        // Invert scaling to get the actual price
+        const priceValue = this.outputScaler.inverseTransformValue(predictionValue, 0);
+        
+        // Create a date for this prediction (1 day after the last date)
+        const lastDate = new Date(
+          i === 0 
+            ? data[data.length - 1].date 
+            : predictions[i - 1].date
+        );
+        const predictionDate = new Date(lastDate);
+        predictionDate.setDate(lastDate.getDate() + 1);
+        
+        // Add some volatility for upper and lower bounds
+        const volatility = 0.02 * Math.sqrt((i + 1) / 10); // Increasing volatility over time
+        
+        // Create prediction point
+        const predictionPoint: PredictionPoint = {
+          date: predictionDate.toISOString().split('T')[0],
+          price: priceValue,
+          upper: priceValue * (1 + volatility),
+          lower: priceValue * (1 - volatility),
+          algorithmUsed: 'cnnlstm',
         };
+        
+        predictions.push(predictionPoint);
+        
+        // Update the sequence for the next prediction
+        const newDataPoint: StockDataPoint = {
+          date: predictionPoint.date,
+          timestamp: predictionDate.getTime(),
+          open: predictionValue,
+          high: predictionValue,
+          low: predictionValue,
+          close: predictionValue,
+          volume: currentSequence[currentSequence.length - 1].volume,
+        };
+        
+        // Remove the first element and add the new prediction
+        currentSequence = [...currentSequence.slice(1), newDataPoint];
+        
+        // Clean up tensors
+        input.dispose();
+        prediction.dispose();
       }
       
-      // Prepare training data
-      const { X, y } = this.prepareTrainingData(scaledData);
+      console.log(`[CNNLSTMModel] Successfully generated ${predictions.length} predictions`);
       
-      // Build model with the correct input shape
-      this.model = this.buildModel([this.params.timeSteps, this.params.features.length]);
-      
-      // Train the model
-      const history = await this.model.fit(X, y, {
-        epochs: this.params.epochs,
-        batchSize: this.params.batchSize,
-        validationSplit: 0.2,
-        callbacks: {
-          onEpochEnd: (epoch, logs) => {
-            console.log(`Epoch ${epoch + 1}/${this.params.epochs}, loss: ${logs?.loss.toFixed(6)}, val_loss: ${logs?.val_loss.toFixed(6)}`);
-          },
-        },
-      });
-      
-      // Clean up tensors
-      X.dispose();
-      y.dispose();
-      
-      return history;
-    } finally {
-      this.isTraining = false;
+      return predictions;
+    } catch (error) {
+      console.error(`[CNNLSTMModel] Error during prediction:`, error);
+      throw error;
     }
-  }
-
-  /**
-   * Predict future stock prices
-   */
-  async predict(data: StockDataPoint[], days: number = 30): Promise<PredictionPoint[]> {
-    if (!this.model) {
-      throw new Error('Model not trained yet. Call train() first.');
-    }
-    
-    if (data.length < this.params.timeSteps) {
-      throw new Error(`Insufficient data for prediction. Need at least ${this.params.timeSteps} data points.`);
-    }
-    
-    // Get the most recent data points
-    const recentData = data.slice(-this.params.timeSteps);
-    
-    // Scale the input data
-    const scaledData = [...recentData];
-    for (let i = 0; i < scaledData.length; i++) {
-      for (const feature of this.params.features) {
-        const value = scaledData[i][feature as keyof StockDataPoint] as number;
-        const featureIndex = this.featureIndices[feature];
-        const scaled = this.inputScaler.transformValue(value, featureIndex);
-        scaledData[i] = { ...scaledData[i], [feature]: scaled };
-      }
-    }
-    
-    // Predictions array
-    const predictions: PredictionPoint[] = [];
-    const lastDate = new Date(data[data.length - 1].date);
-    
-    // Create a copy of the scaled data that we'll update during prediction
-    let currentData = [...scaledData];
-    
-    // Make predictions for the specified number of days
-    for (let i = 0; i < days; i++) {
-      // Prepare input for prediction
-      const sequence: number[][] = [];
-      for (let j = 0; j < this.params.timeSteps; j++) {
-        const featureValues: number[] = [];
-        for (const feature of this.params.features) {
-          featureValues.push(currentData[j][feature as keyof StockDataPoint] as number);
-        }
-        sequence.push(featureValues);
-      }
-      
-      // Convert to tensor
-      const input = tf.tensor3d([sequence], [1, this.params.timeSteps, this.params.features.length]);
-      
-      // Make prediction
-      const predictionTensor = this.model.predict(input) as tf.Tensor;
-      const predictedValue = await predictionTensor.data();
-      
-      // Scale back the predicted value
-      const unscaledPrediction = this.outputScaler.inverseTransformValue(predictedValue[0], 0);
-      
-      // Calculate date for this prediction
-      const predictionDate = new Date(lastDate);
-      predictionDate.setDate(lastDate.getDate() + i + 1);
-      
-      // Create prediction point
-      const predictionPoint: PredictionPoint = {
-        date: predictionDate.toISOString().split('T')[0],
-        price: unscaledPrediction,
-        upper: unscaledPrediction * 1.02, // Add 2% for upper bound
-        lower: unscaledPrediction * 0.98, // Subtract 2% for lower bound
-      };
-      
-      predictions.push(predictionPoint);
-      
-      // Update currentData by removing the first element and adding the new prediction
-      const newDataPoint: Partial<StockDataPoint> = {};
-      
-      // Set all features to the last known values
-      for (const feature of this.params.features) {
-        if (feature === 'close') {
-          newDataPoint[feature as keyof StockDataPoint] = predictedValue[0] as any;
-        } else {
-          // For other features, just use the last known value
-          // This is a simplification; in a real app, you might want to predict these too
-          newDataPoint[feature as keyof StockDataPoint] = 
-            currentData[currentData.length - 1][feature as keyof StockDataPoint];
-        }
-      }
-      
-      // Add date to the new data point
-      newDataPoint.date = predictionDate.toISOString();
-      
-      // Remove first element and add new prediction
-      currentData.shift();
-      currentData.push(newDataPoint as StockDataPoint);
-      
-      // Clean up tensors
-      input.dispose();
-      predictionTensor.dispose();
-    }
-    
-    return predictions;
   }
 
   /**

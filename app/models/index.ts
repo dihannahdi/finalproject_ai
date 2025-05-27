@@ -38,8 +38,22 @@ export function createModel(algorithm: string, params: any = {}) {
     case 'xgboost':
       return new XGBoostModel(mergedParams);
     case 'gan':
-      console.log('GAN model selected. Currently using LSTM as a fallback since GAN is not fully implemented.');
-      return new LSTMModel(mergedParams);
+      console.warn('GAN model selected. Currently using LSTM as a fallback since GAN is not fully implemented.');
+      // Create a special version of LSTM that identifies as GAN in its predict method
+      const lstmModel = new LSTMModel(mergedParams);
+      const originalPredict = lstmModel.predict;
+      
+      // Override the predict method to mark predictions as coming from GAN
+      lstmModel.predict = async (data: StockDataPoint[], days?: number) => {
+        const predictions = await originalPredict.call(lstmModel, data, days);
+        // Mark each prediction as coming from GAN (LSTM fallback)
+        return predictions.map(p => ({
+          ...p,
+          algorithmUsed: 'gan (lstm fallback)'
+        }));
+      };
+      
+      return lstmModel;
     // Add other model types as they are implemented
     default:
       // Default to LSTM if the algorithm is not recognized

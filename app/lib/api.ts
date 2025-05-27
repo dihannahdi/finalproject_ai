@@ -39,6 +39,7 @@ export interface PredictionPoint {
   price: number;
   upper: number;
   lower: number;
+  algorithmUsed?: string; // Track which algorithm was actually used
 }
 
 // Helper function to check if API key is valid
@@ -300,129 +301,121 @@ export async function predictStockPrice(
   predictionDays: number = 30
 ): Promise<PredictionPoint[]> {
   try {
-    // Input validation
-    if (!historicalData || historicalData.length < 20) {
-      console.warn('Insufficient data for prediction. Minimum 20 data points required.');
+    // Input validation with higher data requirements
+    if (!historicalData || historicalData.length < 100) {
+      console.warn('Insufficient data for prediction with 2-3 years of historical data. Minimum 100 data points required.');
       return [];
     }
 
     // Sort data chronologically to ensure consistency
     const sortedData = [...historicalData].sort((a, b) => {
-      const dateA = new Date(a.date).getTime();
-      const dateB = new Date(b.date).getTime();
-      return dateA - dateB;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
     });
 
-    let predictions: PredictionPoint[] = [];
-    
-    // Simple validation - the last date is more than 30 days in the future, use fallback
+    // Log the data range being used
+    const firstDate = new Date(sortedData[0].date);
     const lastDate = new Date(sortedData[sortedData.length - 1].date);
+    const dataRangeMonths = (lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24 * 30);
+    
+    console.log(`Training with ${sortedData.length} data points spanning ${dataRangeMonths.toFixed(1)} months from ${firstDate.toISOString().split('T')[0]} to ${lastDate.toISOString().split('T')[0]}`);
+
+    // Initialize predictions array
+    let predictions: PredictionPoint[] = [];
+
+    // Verify that the last date in the data is not too far in the future
     const today = new Date();
-    if (lastDate.getTime() - today.getTime() > 30 * 24 * 60 * 60 * 1000) {
-      console.warn('Last date in data is too far in the future. Using fallback prediction.');
-      return generateMovingAverageForecast(sortedData, predictionDays);
+    if (lastDate.getTime() > today.getTime() + 24 * 60 * 60 * 1000) {
+      console.warn('Last date in data is too far in the future.');
+      return [];
     }
 
     // Use appropriate model for prediction
     const modelType = algorithm.toLowerCase();
-    console.log(`🔮 Using prediction algorithm: ${modelType}`);
+    console.log(`🔮 Using prediction algorithm: ${modelType} with extended historical data`);
     
-    // First try the requested algorithm
-    try {
-      if (modelType === 'lstm') {
-        console.log('Creating LSTM model for prediction');
-        // Create and train LSTM model using the model factory
-        const lstmModel = createModel('lstm') as LSTMModel;
-        await lstmModel.train(sortedData);
-        predictions = await lstmModel.predict(sortedData, predictionDays);
-      } else if (modelType === 'transformer') {
-        console.log('Creating Transformer model for prediction');
-        // Create Transformer model using the model factory
-        const transformerModel = createModel('transformer') as TransformerModel;
-        await transformerModel.train(sortedData);
-        predictions = await transformerModel.predict(sortedData, predictionDays);
-      } else if (modelType === 'arima') {
-        console.log('Using ARIMA model for prediction');
-        predictions = await generateARIMAForecast(sortedData, predictionDays);
-      } else if (modelType === 'xgboost') {
-        console.log('Creating XGBoost model for prediction');
-        // Use the XGBoostModel class from the models directory
-        const xgboostModel = createModel('xgboost') as XGBoostModel;
-        await xgboostModel.train(sortedData);
-        predictions = await xgboostModel.predict(sortedData, predictionDays);
-      } else if (modelType === 'cnnlstm') {
-        console.log('Creating CNN-LSTM model for prediction');
-        // Create CNN-LSTM model using the model factory
-        const cnnlstmModel = createModel('cnnlstm') as CNNLSTMModel;
-        await cnnlstmModel.train(sortedData);
-        predictions = await cnnlstmModel.predict(sortedData, predictionDays);
-      } else if (modelType === 'ensemble') {
-        console.log('Creating Ensemble model for prediction');
-        // Create ensemble model using the model factory
-        const ensembleModel = createModel('ensemble') as EnsembleModel;
-        await ensembleModel.train(sortedData);
-        predictions = await ensembleModel.predict(sortedData, predictionDays);
-      } else if (modelType === 'tddm') {
-        console.log('Creating TDDM model for prediction');
-        // Create TDDM model using the model factory
-        const tddmModel = createModel('tddm') as TDDMModel;
-        await tddmModel.train(sortedData);
-        predictions = await tddmModel.predict(sortedData, predictionDays);
-      } else {
-        console.warn(`Unknown algorithm: ${algorithm}. Using moving average.`);
-        // Default to simple MA
-        predictions = await generateMovingAverageForecast(sortedData, predictionDays);
-      }
-      
-      // Validate predictions
-      if (predictions && predictions.length > 0 && isFinite(predictions[0].price)) {
-        console.log(`Successfully generated ${predictions.length} predictions using ${modelType}`);
-        return predictions;
-      }
-      
-      throw new Error(`${modelType} model returned invalid predictions`);
-      
-    } catch (modelError) {
-      // If the requested algorithm fails, try a more reliable fallback
-      console.error(`Error using ${modelType} model:`, modelError);
-      console.log(`Falling back to more reliable algorithm...`);
-      
-      // Try different fallbacks based on what was attempted
-      try {
-        if (modelType !== 'xgboost') {
-          // XGBoost is often more reliable for small datasets
-          console.log('Trying XGBoost as fallback...');
-          const xgboostModel = createModel('xgboost', { numTrees: 5, maxDepth: 2 }) as XGBoostModel;
-          await xgboostModel.train(sortedData);
-          predictions = await xgboostModel.predict(sortedData, predictionDays);
-          
-          if (predictions && predictions.length > 0 && isFinite(predictions[0].price)) {
-            console.log(`Successfully generated ${predictions.length} predictions using XGBoost fallback`);
-            return predictions;
-          }
-        }
-        
-        // If XGBoost fails or was the original algorithm, try ARIMA
-        if (modelType !== 'arima') {
-          console.log('Trying ARIMA as fallback...');
-          predictions = await generateARIMAForecast(sortedData, predictionDays);
-          
-          if (predictions && predictions.length > 0 && isFinite(predictions[0].price)) {
-            console.log(`Successfully generated ${predictions.length} predictions using ARIMA fallback`);
-            return predictions;
-          }
-        }
-        
-        // Last resort: Moving Average
-        console.log('Using Moving Average as final fallback...');
-        return generateMovingAverageForecast(sortedData, predictionDays);
-        
-      } catch (fallbackError) {
-        console.error('Fallback prediction also failed:', fallbackError);
-        return generateMovingAverageForecast(sortedData, predictionDays);
-      }
+    // Use the requested algorithm without fallbacks
+    if (modelType === 'lstm') {
+      console.log('Creating LSTM model for prediction with extended historical data');
+      // Create and train LSTM model using the model factory
+      const lstmModel = createModel('lstm') as LSTMModel;
+      await lstmModel.train(sortedData);
+      predictions = await lstmModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'lstm'}));
+    } else if (modelType === 'transformer') {
+      console.log('Creating Transformer model for prediction with extended historical data');
+      // Create Transformer model using the model factory
+      const transformerModel = createModel('transformer') as TransformerModel;
+      await transformerModel.train(sortedData);
+      predictions = await transformerModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'transformer'}));
+    } else if (modelType === 'arima') {
+      console.log('Creating ARIMA model for prediction with extended historical data');
+      // Use ARIMA model for prediction
+      predictions = await generateARIMAForecast(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'arima'}));
+    } else if (modelType === 'prophet') {
+      console.log('Creating Prophet model for prediction');
+      // Previously used ARIMA as fallback, now use empty predictions to trigger error handling
+      return [];
+    } else if (modelType === 'tddm') {
+      console.log('Creating TDDM model for prediction with extended historical data');
+      // Create TDDM model using the model factory
+      const tddmModel = createModel('tddm') as TDDMModel;
+      await tddmModel.train(sortedData);
+      predictions = await tddmModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'tddm'}));
+    } else if (modelType === 'gan') {
+      console.log('Creating GAN model for prediction');
+      // Previously used LSTM as fallback, now use empty predictions to trigger error handling
+      return [];
+    } else if (modelType === 'xgboost') {
+      console.log('Creating XGBoost model for prediction with extended historical data');
+      // Create XGBoost model using the model factory
+      const xgboostModel = createModel('xgboost') as XGBoostModel;
+      await xgboostModel.train(sortedData);
+      predictions = await xgboostModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'xgboost'}));
+    } else if (modelType === 'cnnlstm') {
+      console.log('Creating CNN-LSTM model for prediction with extended historical data');
+      // Create CNN-LSTM model using the model factory
+      const cnnlstmModel = createModel('cnnlstm') as CNNLSTMModel;
+      await cnnlstmModel.train(sortedData);
+      predictions = await cnnlstmModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'cnnlstm'}));
+    } else if (modelType === 'ensemble') {
+      console.log('Creating Ensemble model for prediction with extended historical data');
+      // Create Ensemble model using the model factory
+      const ensembleModel = createModel('ensemble') as EnsembleModel;
+      await ensembleModel.train(sortedData);
+      predictions = await ensembleModel.predict(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'ensemble'}));
+    } else if (modelType === 'movingaverage') {
+      console.log('Using Moving Average model for prediction with extended historical data');
+      predictions = await generateMovingAverageForecast(sortedData, predictionDays);
+      // Add algorithm info to predictions
+      predictions = predictions.map(p => ({...p, algorithmUsed: 'movingaverage'}));
+    } else {
+      console.warn(`Unknown algorithm: ${algorithm}. Cannot make prediction.`);
+      return [];
+    }
+
+    // Validate predictions
+    if (predictions && predictions.length > 0 && isFinite(predictions[0].price)) {
+      console.log(`Successfully generated ${predictions.length} predictions using ${modelType} with extended historical data`);
+      return predictions;
     }
     
+    // If we got here, the predictions are invalid
+    console.warn(`Invalid predictions from ${modelType} with extended historical data. Returning empty array.`);
+    return [];
+
   } catch (error) {
     console.error('Error in stock price prediction:', error);
     return [];
@@ -439,13 +432,15 @@ export async function generateMovingAverageForecast(historicalData: StockDataPoi
   const lastDate = new Date(historicalData[historicalData.length - 1].date);
   
   // Calculate multiple moving averages for better prediction
-  const shortWindow = Math.min(10, Math.floor(historicalData.length / 2));
+  const shortWindow = Math.min(10, Math.floor(historicalData.length / 3));
   const mediumWindow = Math.min(20, Math.floor(historicalData.length / 2));
-  const longWindow = Math.min(50, historicalData.length - 1);
+  const longWindow = Math.min(50, Math.floor(historicalData.length * 0.8));
   
   const shortMA = calculateSMA(historicalData, shortWindow) || lastPrice;
   const mediumMA = calculateSMA(historicalData, mediumWindow) || lastPrice;
   const longMA = calculateSMA(historicalData, longWindow) || lastPrice;
+  
+  console.log('Moving Average values:', { shortMA, mediumMA, longMA, lastPrice });
   
   // Calculate trend based on multiple moving average crossovers
   // Short-term trend (more weight)
@@ -455,7 +450,17 @@ export async function generateMovingAverageForecast(historicalData: StockDataPoi
   
   // Combined trend with weights - ensure it's a finite value
   const rawTrend = (shortTrend * 0.7) + (longTrend * 0.3);
-  const trend = isFinite(rawTrend) ? rawTrend : 0;
+  let trend = isFinite(rawTrend) ? rawTrend : 0;
+  
+  // Constrain trend to reasonable values
+  trend = Math.max(-0.005, Math.min(0.005, trend));
+  
+  // If trend is negative, make it more conservative
+  if (trend < 0) {
+    trend = trend * 0.5;
+  }
+  
+  console.log('Calculated trend:', trend);
   
   // Calculate volatility from historical data
   const volatility = calculateVolatility(historicalData);
@@ -481,34 +486,44 @@ export async function generateMovingAverageForecast(historicalData: StockDataPoi
     predictionDate.setDate(lastDate.getDate() + i);
     
     // Apply trend with decreasing certainty over time
-    const trendFactor = adjustedTrend * Math.exp(-i/45);
+    const trendFactor = adjustedTrend * Math.exp(-i/60); // Slower decay
     
-    // Add randomness based on historical volatility 
+    // Add smaller randomness based on historical volatility 
     // (increased uncertainty over time)
-    const randomComponent = generateNormalRandom() * volatility * Math.sqrt(i/10);
+    const randomComponent = generateNormalRandom() * volatility * Math.sqrt(i/15) * 0.5; // Reduced randomness
     
     // Update price with trend and randomness - ensure it's a finite value
     const priceChange = trendFactor + randomComponent;
     currentPrice = currentPrice * (1 + (isFinite(priceChange) ? priceChange : 0));
     
+    // Ensure price doesn't deviate too much from moving averages (mean reversion)
+    const meanReversionTarget = (shortMA + mediumMA + lastPrice) / 3;
+    const meanReversionStrength = 0.1 * (i / days); // Increases with time
+    currentPrice = currentPrice * (1 - meanReversionStrength) + meanReversionTarget * meanReversionStrength;
+    
+    // Ensure price doesn't drop too much from the last historical price
+    const minPrice = lastPrice * Math.max(0.85, 1 - (i * 0.005)); // Max 15% drop or 0.5% per day
+    currentPrice = Math.max(minPrice, currentPrice);
+    
     // Ensure price is a valid positive number
     currentPrice = isFinite(currentPrice) ? Math.max(0.01, currentPrice) : lastPrice;
     
     // Calculate confidence interval (grows with time)
-    const confIntervalRaw = volatility * Math.sqrt(i/7) * 1.96; // 95% confidence
+    const confIntervalRaw = volatility * Math.sqrt(i/10) * 1.96; // 95% confidence
     const confInterval = isFinite(confIntervalRaw) ? confIntervalRaw : 0.01;
     
     const upperBound = isFinite(currentPrice * (1 + confInterval)) ? 
         currentPrice * (1 + confInterval) : currentPrice * 1.01;
     
     const lowerBound = isFinite(currentPrice * (1 - confInterval)) ?
-        Math.max(0.01, currentPrice * (1 - confInterval)) : currentPrice * 0.99;
+        Math.max(minPrice * 0.95, currentPrice * (1 - confInterval)) : currentPrice * 0.99;
     
     predictions.push({
       date: predictionDate.toISOString().split('T')[0],
       price: currentPrice,
       upper: upperBound,
       lower: lowerBound,
+      algorithmUsed: 'movingaverage'
     });
   }
   
@@ -630,6 +645,7 @@ export async function generateARIMAForecast(historicalData: StockDataPoint[], da
       price: currentPrice,
       upper: currentPrice + confInterval * Math.sqrt(i),
       lower: Math.max(0.01, currentPrice - confInterval * Math.sqrt(i)),
+      algorithmUsed: 'arima',
     });
   }
   
@@ -1087,22 +1103,28 @@ export async function safePredictStockPrice(
   historicalData: StockDataPoint[],
   algorithm: string,
   predictionDays: number = 30
-): Promise<PredictionPoint[]> {
+): Promise<{ predictions: PredictionPoint[], actualAlgorithm: string }> {
   try {
-    console.log(`[safePredictStockPrice] Generating predictions for ${symbol} using ${algorithm}`);
+    console.log(`[safePredictStockPrice] Generating predictions for ${symbol} using ${algorithm} with ${historicalData?.length || 0} historical data points`);
     
-    // Validate input data
-    if (!historicalData || historicalData.length < 10) {
-      console.warn(`[safePredictStockPrice] Insufficient historical data (${historicalData?.length || 0} points), using fallback`);
-      return createFallbackPrediction(historicalData || [], predictionDays);
+    // Validate input data - require more data for better predictions
+    if (!historicalData || historicalData.length < 100) {
+      console.warn(`[safePredictStockPrice] Insufficient historical data (${historicalData?.length || 0} points, minimum 100 required), using fallback`);
+      const fallbackPredictions = createFallbackPrediction(historicalData || [], predictionDays);
+      return { predictions: fallbackPredictions, actualAlgorithm: 'fallback' };
     }
     
     // Call the actual prediction function with timeout protection
     let predictions: PredictionPoint[] = [];
+    let actualAlgorithm = algorithm;
+    
     try {
-      // Add a timeout to prevent hanging on model training
+      // Add a timeout to prevent hanging on model training - increased for CNN-LSTM model
+      const timeoutMs = algorithm.toLowerCase() === 'cnnlstm' ? 60000 : 45000; // 60 seconds for CNN-LSTM, 45 for others
+      console.log(`[safePredictStockPrice] Setting timeout of ${timeoutMs/1000} seconds for ${algorithm}`);
+      
       const timeoutPromise = new Promise<PredictionPoint[]>((_, reject) => {
-        setTimeout(() => reject(new Error('Prediction timeout after 15 seconds')), 15000);
+        setTimeout(() => reject(new Error(`Prediction timeout after ${timeoutMs/1000} seconds`)), timeoutMs);
       });
       
       // Race between the actual prediction and the timeout
@@ -1111,78 +1133,40 @@ export async function safePredictStockPrice(
         timeoutPromise
       ]);
       
-      console.log(`[safePredictStockPrice] Model prediction completed with ${predictions.length} points`);
+      // Check if the predictions have an algorithmUsed field
+      if (predictions.length > 0 && predictions[0].algorithmUsed) {
+        actualAlgorithm = predictions[0].algorithmUsed;
+      }
+      
+      console.log(`[safePredictStockPrice] Model prediction completed with ${predictions.length} points using ${actualAlgorithm}`);
+      
+      // Ensure first prediction starts from last historical price for smooth transition
+      if (predictions.length > 0 && historicalData.length > 0) {
+        const lastHistoricalPoint = historicalData[historicalData.length - 1];
+        const firstPredictionPoint = predictions[0];
+        
+        // Adjust first prediction to start from last historical price
+        predictions[0] = {
+          ...firstPredictionPoint,
+          price: lastHistoricalPoint.close,
+          lower: lastHistoricalPoint.close * 0.99, // 1% lower
+          upper: lastHistoricalPoint.close * 1.01  // 1% higher
+        };
+      }
+      
+      console.log(`[safePredictStockPrice] Successfully generated ${predictions.length} predictions using ${actualAlgorithm}`);
+      return { predictions, actualAlgorithm };
     } catch (modelError) {
       console.error(`[safePredictStockPrice] Error in model prediction:`, modelError);
       console.warn(`[safePredictStockPrice] Falling back to simple prediction for ${algorithm}`);
-      return createFallbackPrediction(historicalData, predictionDays);
+      const fallbackPredictions = createFallbackPrediction(historicalData, predictionDays);
+      return { predictions: fallbackPredictions, actualAlgorithm: 'fallback' };
     }
-    
-    // Validate the returned predictions
-    if (!predictions || !Array.isArray(predictions) || predictions.length === 0) {
-      console.warn(`[safePredictStockPrice] No predictions returned from algorithm ${algorithm}, using fallback`);
-      return createFallbackPrediction(historicalData, predictionDays);
-    }
-    
-    // Check for invalid values in predictions (NaN, Infinity, etc.)
-    const hasInvalidValues = predictions.some(p => 
-      !isFinite(p.price) || !isFinite(p.upper) || !isFinite(p.lower) || 
-      p.price === null || p.upper === null || p.lower === null
-    );
-    
-    if (hasInvalidValues) {
-      console.warn(`[safePredictStockPrice] Invalid values detected in ${algorithm} predictions, using fallback`);
-      return createFallbackPrediction(historicalData, predictionDays);
-    }
-    
-    // Check for unreasonable predictions (too high or too low compared to historical data)
-    const lastPrice = historicalData[historicalData.length - 1].close;
-    const maxReasonablePrice = lastPrice * 2; // 100% increase
-    const minReasonablePrice = lastPrice * 0.5; // 50% decrease
-    
-    const hasUnreasonablePredictions = predictions.some(p => 
-      p.price > maxReasonablePrice || p.price < minReasonablePrice
-    );
-    
-    if (hasUnreasonablePredictions) {
-      console.warn(`[safePredictStockPrice] Unreasonable values detected in ${algorithm} predictions, using fallback`);
-      return createFallbackPrediction(historicalData, predictionDays);
-    }
-    
-    // Ensure first prediction starts from last historical price for smooth transition
-    if (predictions.length > 0 && historicalData.length > 0) {
-      const lastHistoricalPoint = historicalData[historicalData.length - 1];
-      const firstPredictionPoint = predictions[0];
-      
-      // Adjust first prediction to start from last historical price
-      predictions[0] = {
-        ...firstPredictionPoint,
-        price: lastHistoricalPoint.close,
-        lower: lastHistoricalPoint.close * 0.99, // 1% lower
-        upper: lastHistoricalPoint.close * 1.01  // 1% higher
-      };
-      
-      // Smooth out the transition for the next few points
-      for (let i = 1; i < Math.min(5, predictions.length); i++) {
-        const weight = (5 - i) / 5; // Weight decreases as we move away from the start
-        const originalPrice = predictions[i].price;
-        const targetPrice = lastHistoricalPoint.close + (originalPrice - lastHistoricalPoint.close) * (1 - weight * 0.5);
-        
-        predictions[i] = {
-          ...predictions[i],
-          price: targetPrice,
-          lower: targetPrice * 0.99,
-          upper: targetPrice * 1.01
-        };
-      }
-    }
-    
-    console.log(`[safePredictStockPrice] Successfully generated ${predictions.length} predictions`);
-    return predictions;
   } catch (error) {
     console.error(`[safePredictStockPrice] Error generating predictions:`, error);
     // Create a minimal fallback prediction if needed
-    return createFallbackPrediction(historicalData || [], predictionDays);
+    const fallbackPredictions = createFallbackPrediction(historicalData || [], predictionDays);
+    return { predictions: fallbackPredictions, actualAlgorithm: 'fallback' };
   }
 }
 
@@ -1202,34 +1186,65 @@ function createFallbackPrediction(historicalData: StockDataPoint[], days: number
     ? new Date(historicalData[historicalData.length - 1].date)
     : new Date();
   
-  // Calculate trend from historical data for more realistic predictions
-  let trend = 0;
-  if (historicalData && historicalData.length >= 10) {
-    // Use last 10 days to determine trend
-    const recentData = historicalData.slice(-10);
-    const firstPrice = recentData[0].close;
-    const lastRecentPrice = recentData[recentData.length - 1].close;
+  // Calculate a more stable trend from historical data
+  let trend = 0.0001; // Small positive default trend (0.01% daily)
+  
+  if (historicalData && historicalData.length >= 20) {
+    // Use longer period for trend calculation (20 days)
+    const recentData = historicalData.slice(-20);
     
-    // Calculate average daily percentage change
-    trend = (lastRecentPrice / firstPrice - 1) / recentData.length;
+    // Calculate moving averages to smooth out noise
+    const shortMA = calculateSMA(recentData, 5);
+    const longMA = calculateSMA(recentData, 20);
     
-    // Cap trend to more conservative values (-0.5% to +0.5% per day)
-    // Bias slightly toward positive to avoid steep downward predictions
-    trend = Math.max(-0.005, Math.min(0.005, trend));
-    
-    // If trend is negative, make it even more conservative
-    if (trend < 0) {
-      trend = trend * 0.5; // Reduce negative trend impact
+    // Use moving averages to determine trend direction
+    if (shortMA && longMA) {
+      trend = (shortMA - longMA) / longMA / 20; // Normalize to daily trend
+    } else {
+      // Fallback to simple calculation if MA fails
+      const firstPrice = recentData[0].close;
+      const lastRecentPrice = recentData[recentData.length - 1].close;
+      
+      // Calculate average daily percentage change
+      trend = (lastRecentPrice / firstPrice - 1) / recentData.length;
     }
-  } else {
-    // Small random trend if not enough data - bias slightly positive
-    trend = (Math.random() * 0.006) - 0.002; // -0.2% to +0.4% daily change
+    
+    // Ensure trend is reasonable - much tighter bounds
+    trend = Math.max(-0.002, Math.min(0.002, trend));
+    
+    // Always ensure a slight upward bias
+    if (trend < 0) {
+      trend = trend * 0.3; // Significantly reduce negative trends
+    }
   }
   
-  // Add some volatility based on historical data
-  let volatility = 0.01; // Default 1% daily volatility
-  if (historicalData && historicalData.length >= 5) {
-    const recentPrices = historicalData.slice(-5).map(d => d.close);
+  console.log('Using trend for prediction:', trend);
+  
+  // Calculate price momentum (acceleration/deceleration of price changes)
+  let momentum = 0;
+  if (historicalData && historicalData.length >= 10) {
+    const recentPrices = historicalData.slice(-10).map(d => d.close);
+    const changes = [];
+    for (let i = 1; i < recentPrices.length; i++) {
+      changes.push(recentPrices[i] / recentPrices[i-1] - 1);
+    }
+    
+    // Calculate if momentum is increasing or decreasing
+    let increasingCount = 0;
+    let decreasingCount = 0;
+    for (let i = 1; i < changes.length; i++) {
+      if (changes[i] > changes[i-1]) increasingCount++;
+      if (changes[i] < changes[i-1]) decreasingCount++;
+    }
+    
+    // Set momentum based on recent price change direction
+    momentum = (increasingCount - decreasingCount) / (increasingCount + decreasingCount) * 0.0005;
+  }
+  
+  // Add some volatility based on historical data - but keep it very small
+  let volatility = 0.005; // Default 0.5% daily volatility
+  if (historicalData && historicalData.length >= 10) {
+    const recentPrices = historicalData.slice(-10).map(d => d.close);
     const avgPrice = recentPrices.reduce((sum, price) => sum + price, 0) / recentPrices.length;
     
     // Calculate standard deviation
@@ -1237,41 +1252,75 @@ function createFallbackPrediction(historicalData: StockDataPoint[], days: number
     const avgSquaredDiff = squaredDiffs.reduce((sum, diff) => sum + diff, 0) / squaredDiffs.length;
     volatility = Math.sqrt(avgSquaredDiff) / avgPrice;
     
-    // Ensure volatility is reasonable (0.5% to 2%)
-    volatility = Math.max(0.005, Math.min(0.02, volatility));
+    // Ensure volatility is very reasonable (0.2% to 1%)
+    volatility = Math.max(0.002, Math.min(0.01, volatility));
   }
   
-  // Generate smooth predictions
+  // Generate smooth predictions with minimal randomness
   let currentPrice = lastPrice;
   
+  // Calculate the overall market direction from the last 30-60 days if available
+  let marketDirection = 0;
+  if (historicalData && historicalData.length >= 60) {
+    const longTermData = historicalData.slice(-60);
+    const firstLongTermPrice = longTermData[0].close;
+    const lastLongTermPrice = longTermData[longTermData.length - 1].close;
+    marketDirection = (lastLongTermPrice / firstLongTermPrice - 1) / 60; // Daily rate
+    marketDirection = Math.max(-0.001, Math.min(0.001, marketDirection)); // Constrain it
+  }
+  
+  // Generate predictions
   for (let i = 1; i <= days; i++) {
     const predictionDate = new Date(lastDate);
     predictionDate.setDate(lastDate.getDate() + i);
     
-    // Apply trend with some randomness - reduce randomness impact
-    const randomFactor = (Math.random() * 0.6 - 0.2) * volatility; // Bias slightly positive
+    // Calculate base trend with momentum effect (trend accelerates/decelerates)
+    const adjustedTrend = trend + (momentum * i / 30);
     
-    // Apply dampening factor for longer-term predictions to avoid extreme changes
-    const dampening = Math.max(0.5, 1 - (i / (days * 2)));
-    currentPrice = currentPrice * (1 + (trend + randomFactor) * dampening);
+    // Apply market direction with increasing weight over time
+    const marketWeight = Math.min(0.7, i / (days * 1.5));
+    const combinedTrend = adjustedTrend * (1 - marketWeight) + marketDirection * marketWeight;
     
-    // Ensure price doesn't drop too much from the last historical price
-    const minPrice = lastPrice * Math.max(0.85, 1 - (i * 0.005)); // Max 15% drop or 0.5% per day
-    currentPrice = Math.max(minPrice, currentPrice);
+    // Add minimal randomness that decreases over time (more certain short-term, less random)
+    const randomFactor = generateNormalRandom() * volatility * Math.exp(-i/30) * 0.3;
+    
+    // Calculate price change with dampening for longer predictions
+    const priceChange = combinedTrend + randomFactor;
+    
+    // Update price with compound effect
+    currentPrice = currentPrice * (1 + priceChange);
+    
+    // Apply mean reversion to prevent extreme predictions
+    // Price gradually reverts to a moving average over time
+    if (i > 5) {
+      const meanReversionStrength = Math.min(0.3, (i - 5) / (days * 2));
+      const targetPrice = lastPrice * (1 + trend * i); // Simple linear projection
+      currentPrice = currentPrice * (1 - meanReversionStrength) + targetPrice * meanReversionStrength;
+    }
+    
+    // Ensure price remains reasonable
+    // Allow at most 20% total change over the prediction period
+    const maxChange = 1 + (0.2 * i / days); // Max 20% increase
+    const minChange = 1 - (0.1 * i / days); // Max 10% decrease
+    
+    const maxPrice = lastPrice * maxChange;
+    const minPrice = lastPrice * minChange;
+    
+    currentPrice = Math.min(maxPrice, Math.max(minPrice, currentPrice));
     
     // Calculate confidence interval (grows with time)
-    const dayFactor = Math.sqrt(i / 5);
+    const dayFactor = Math.sqrt(i / 10);
     const confidenceInterval = volatility * dayFactor;
     
     predictions.push({
       date: predictionDate.toISOString().split('T')[0],
       price: currentPrice,
       upper: currentPrice * (1 + confidenceInterval),
-      lower: Math.max(currentPrice * (1 - confidenceInterval), minPrice * 0.95)
+      lower: currentPrice * (1 - confidenceInterval),
+      algorithmUsed: 'fallback',
     });
   }
   
-  // Add logging to help debug the fallback prediction
   console.log('Created fallback prediction with trend:', trend, 'volatility:', volatility);
   
   return predictions;

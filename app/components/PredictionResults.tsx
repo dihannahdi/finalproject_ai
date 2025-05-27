@@ -28,6 +28,9 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
   // Get the last prediction (30 days out)
   const finalPrediction = predictions[predictions.length - 1];
   
+  // Check if we're using a fallback algorithm
+  const isFallback = algorithmName.includes('fallback');
+  
   // Calculate predicted change from current price
   const priceChange = currentPrice 
     ? finalPrediction.price - currentPrice
@@ -49,15 +52,49 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
     return total + (pred.upper - pred.lower) / pred.price;
   }, 0) / predictions.length;
   
-  const riskLevel = volatility > 0.05 
+  // More reasonable risk level calculation based on actual market conditions
+  // Typical volatility for stable stocks is 1-2%, moderate is 2-4%, high is >4%
+  const riskLevel = volatility > 0.04 
     ? 'High' 
-    : volatility > 0.025 
+    : volatility > 0.02 
       ? 'Medium' 
       : 'Low';
+      
+  // More reasonable confidence calculation based on prediction interval size
+  // Financial models typically have 75-95% confidence depending on market conditions
+  const confidenceLevel = Math.min(95, Math.max(75, 95 - (volatility * 250))).toFixed(1);
 
   return (
     <div className="card">
       <h2 className="text-xl font-semibold mb-4">Prediction Results</h2>
+      
+      {/* Algorithm Info */}
+      <div className="mb-4">
+        <div className="flex items-center">
+          <span className="text-sm font-medium text-gray-700 mr-2">Algorithm:</span>
+          <span className={`text-sm px-2 py-0.5 rounded ${
+            algorithmName.includes('fallback') 
+              ? 'bg-yellow-100' 
+              : algorithmName.includes('(') && algorithmName.includes(')') 
+                ? 'bg-orange-100'
+                : 'bg-green-100'
+          }`}>{algorithmName}</span>
+        </div>
+        
+        {algorithmName.includes('fallback') && (
+          <div className="mt-2 p-3 bg-yellow-50 border-l-4 border-yellow-400 text-sm text-yellow-800">
+            <div className="font-medium">Using fallback algorithm</div>
+            <p>The requested algorithm encountered issues and a fallback was used. Predictions may be less accurate than expected.</p>
+          </div>
+        )}
+        
+        {(algorithmName.includes('(') && algorithmName.includes(')') && !algorithmName.includes('fallback')) && (
+          <div className="mt-2 p-3 bg-orange-50 border-l-4 border-orange-400 text-sm text-orange-800">
+            <div className="font-medium">Using alternative implementation</div>
+            <p>The algorithm is using a different model than requested. This may affect prediction accuracy.</p>
+          </div>
+        )}
+      </div>
       
       <div className="mb-6">
         <h3 className="text-lg font-medium text-gray-700">Forecast Summary</h3>
@@ -94,7 +131,7 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
         <div className="bg-gray-50 p-3 rounded">
           <p className="text-sm text-gray-600">Confidence Level</p>
           <p className="text-xl font-bold text-primary">
-            {(90 - volatility * 500).toFixed(1)}%
+            {confidenceLevel}%
           </p>
         </div>
         <div className="bg-gray-50 p-3 rounded">
@@ -160,7 +197,7 @@ const PredictionResults: React.FC<PredictionResultsProps> = ({
         <ul className="text-sm text-gray-600 space-y-1">
           <li>• {stockSymbol} is predicted to {priceChange >= 0 ? 'increase' : 'decrease'} by {Math.abs(percentChange).toFixed(2)}% over the next 30 days.</li>
           <li>• Predictions are based on historical price patterns and {algorithmName} algorithm.</li>
-          <li>• The prediction confidence level is {(90 - volatility * 500).toFixed(1)}%, indicating {riskLevel.toLowerCase()} volatility.</li>
+          <li>• The prediction confidence level is {confidenceLevel}%, indicating {riskLevel.toLowerCase()} volatility.</li>
           <li>• Results are for informational purposes only and not financial advice.</li>
         </ul>
       </div>

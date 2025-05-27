@@ -1,92 +1,93 @@
 /**
  * Configuration file for model parameters
- * This file contains fast training settings for all models
+ * This file contains configurations optimized for 2-3 years of historical data
  */
 
-// Common parameters for fast training across all models
+// Common parameters for all models with longer historical data
 export const FAST_TRAINING_CONFIG = {
-  // Reduce timesteps (window size) for faster processing
-  timeSteps: 5,
+  // Increase timesteps for better pattern recognition with more data
+  timeSteps: 20,
   
-  // Reduce epochs for faster training
-  epochs: 5,
+  // Increase epochs for better training with more data
+  epochs: 15,
   
-  // Smaller batch size for faster iterations
-  batchSize: 16,
+  // Slightly larger batch size for efficiency with more data
+  batchSize: 32,
   
-  // Simplified feature set
-  features: ['close', 'volume'],
+  // Extended feature set for better predictions
+  features: ['close', 'high', 'low', 'volume'],
 };
 
-// LSTM model fast configuration
+// LSTM model configuration optimized for longer historical data
 export const FAST_LSTM_CONFIG = {
   ...FAST_TRAINING_CONFIG,
-  hiddenLayers: [8, 4], // Smaller network
-  learningRate: 0.002, // Slightly higher learning rate for faster convergence
-  dropoutRate: 0.1,
+  hiddenLayers: [32, 16], // Larger network for more data
+  learningRate: 0.001, // Balanced learning rate
+  dropoutRate: 0.2, // Increased dropout to prevent overfitting with more data
 };
 
-// CNN-LSTM model fast configuration
+// CNN-LSTM model configuration optimized for longer historical data
 export const FAST_CNNLSTM_CONFIG = {
   ...FAST_TRAINING_CONFIG,
-  cnnFilters: 32, // Fewer filters
-  cnnKernelSize: 2, // Smaller kernel
-  lstmUnits: [32, 16], // Smaller LSTM layers
-  dropoutRate: 0.1,
-  denseUnits: [8, 4], // Smaller dense layers
+  cnnFilters: 64, // More filters to capture patterns
+  cnnKernelSize: 3, // Larger kernel for better feature extraction
+  lstmUnits: [64, 32], // Larger LSTM layers
+  dropoutRate: 0.2,
+  denseUnits: [16, 8], // Larger dense layers
 };
 
-// Transformer model fast configuration
+// Transformer model configuration optimized for longer historical data
 export const FAST_TRANSFORMER_CONFIG = {
   ...FAST_TRAINING_CONFIG,
-  dModel: 16, // Smaller embedding dimension
-  numHeads: 2, // Fewer attention heads
-  numEncoderLayers: 1, // Single encoder layer
-  ffnDim: 32, // Smaller feed-forward network
-  dropoutRate: 0.1,
+  dModel: 32, // Increased embedding dimension
+  numHeads: 4, // More attention heads for complex patterns
+  numEncoderLayers: 2, // Multiple encoder layers
+  ffnDim: 64, // Larger feed-forward network
+  dropoutRate: 0.2,
 };
 
-// TDDM model fast configuration
+// TDDM model configuration optimized for longer historical data
 export const FAST_TDDM_CONFIG = {
   ...FAST_TRAINING_CONFIG,
-  hiddenUnits: [32, 16], // Smaller hidden units
-  dropoutRate: 0.1,
-  useAttention: false, // Disable attention for speed
-  useTDDMLayers: false, // Disable specialized layers for speed
-  temporalFeatureExtraction: false, // Disable feature extraction for speed
+  hiddenUnits: [64, 32], // Larger hidden units
+  dropoutRate: 0.2,
+  useAttention: true, // Enable attention for better pattern recognition with more data
+  useTDDMLayers: true, // Enable specialized layers for better performance
+  temporalFeatureExtraction: true, // Enable feature extraction with more data available
 };
 
-// XGBoost model fast configuration
+// XGBoost model configuration optimized for longer historical data
 export const FAST_XGBOOST_CONFIG = {
-  numTrees: 8,             // Fewer trees for faster training
-  maxDepth: 2,             // Shallower trees
-  learningRate: 0.1,       // Standard learning rate
-  featureSubsamplingRatio: 0.8  // Standard feature subsampling ratio
+  numTrees: 50,              // More trees for better ensemble performance and stability
+  maxDepth: 3,               // Reduced depth to prevent overfitting
+  learningRate: 0.05,        // Lower learning rate for more stable predictions
+  featureSubsamplingRatio: 0.7  // Reduced feature sampling to prevent overfitting
 };
 
-// GAN model fast configuration (using LSTM as fallback)
+// GAN model configuration optimized for longer historical data
 export const FAST_GAN_CONFIG = {
   ...FAST_TRAINING_CONFIG,
-  hiddenLayers: [16, 8],   // Smaller network for faster training
-  learningRate: 0.001,     // Learning rate for optimizer
-  dropoutRate: 0.1,        // Dropout rate for regularization
+  hiddenLayers: [32, 16],   // Larger network for more complex patterns
+  learningRate: 0.001,      // Learning rate for optimizer
+  dropoutRate: 0.2,         // Increased dropout for regularization
 };
 
-// Ensemble model fast configuration
+// Ensemble model configuration optimized for longer historical data
 export const FAST_ENSEMBLE_CONFIG = {
   ...FAST_TRAINING_CONFIG,
   // Use multiple models for stacking ensemble
   subModels: {
     lstm: true,
     cnnlstm: true,
-    transformer: true
+    transformer: true,
+    xgboost: true
   },
   ensembleMethod: 'weighted', // Weighted ensemble method for better results
-  weights: [0.4, 0.3, 0.3], // Weights for LSTM, CNN-LSTM, and Transformer
-  epochs: 10, // Slightly more epochs for better ensemble learning
+  weights: [0.3, 0.2, 0.2, 0.3], // Weights for LSTM, CNN-LSTM, Transformer, and XGBoost
+  epochs: 20, // More epochs for better ensemble learning with more data
 };
 
-// Function to apply fast training config to all models based on their type
+// Function to apply optimized config to all models based on their type
 export function getFastModelConfig(modelType: string) {
   switch (modelType.toLowerCase()) {
     case 'lstm':
