@@ -16,6 +16,7 @@ import DateRangePicker from '@/app/components/DateRangePicker';
 import TechnicalIndicators from '@/app/components/TechnicalIndicators';
 import ApiStatus from '@/app/components/ApiStatus';
 import AlgorithmStatus from '@/app/components/AlgorithmStatus';
+import { calculateAllAlgorithmPerformance } from '@/app/lib/algorithmPerformance';
 
 // Mock stock symbols for demo purposes
 const STOCK_SYMBOLS = [
@@ -36,7 +37,9 @@ const ALGORITHM_OPTIONS = [
   { id: 'cnnlstm', name: 'CNN-LSTM', description: 'Hybrid CNN and LSTM model' },
   { id: 'gan', name: 'GAN', description: 'Generative Adversarial Network' },
   { id: 'xgboost', name: 'XGBoost', description: 'Gradient boosting framework' },
-  { id: 'ensemble', name: 'Stacking Ensemble', description: 'Stacked ensemble of multiple base models' },
+  { id: 'randomforest', name: 'RandomForest', description: 'Random forest ensemble classifier' },
+  { id: 'gradientboost', name: 'GradientBoost', description: 'Gradient boosting decision tree model' },
+  { id: 'ensemble', name: 'Ensemble', description: 'Ensemble of XGBoost, RandomForest, and GradientBoost' },
 ];
 
 // Mock technical indicators
@@ -52,7 +55,14 @@ interface AlgorithmPerformance {
   [key: string]: string;
 }
 
-export default function Dashboard() {
+// Define proper PageProps interface
+interface PageProps {
+  params: { initialAlgorithm?: string };
+  searchParams: { [key: string]: string | string[] | undefined };
+}
+
+export default function Dashboard({ params, searchParams }: PageProps) {
+  const initialAlgorithm = params?.initialAlgorithm;
   const [isClient, setIsClient] = useState(false);
   const [stockData, setStockData] = useState<StockDataPoint[] | null>(null);
   const [predictions, setPredictions] = useState<PredictionPoint[] | null>(null);
@@ -64,9 +74,21 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectedStock, setSelectedStock] = useState(STOCK_SYMBOLS[0]);
-  // Make CNN-LSTM the default algorithm
-  const cnnlstmAlgorithm = ALGORITHM_OPTIONS.find(algo => algo.id === 'cnnlstm') || ALGORITHM_OPTIONS[0];
-  const [selectedAlgorithm, setSelectedAlgorithm] = useState(cnnlstmAlgorithm);
+  
+  // Find the algorithm from the URL or use the default
+  const getInitialAlgorithm = () => {
+    if (initialAlgorithm) {
+      const matchingAlgorithm = ALGORITHM_OPTIONS.find(algo => algo.id === initialAlgorithm);
+      if (matchingAlgorithm) {
+        return matchingAlgorithm;
+      }
+    }
+    // Default to the first algorithm if no match is found
+    return ALGORITHM_OPTIONS[0];
+  };
+  
+  // Set the initially selected algorithm
+  const [selectedAlgorithm, setSelectedAlgorithm] = useState(getInitialAlgorithm());
   
   // Calculate default date range (last 3 years from today)
   const today = new Date();
@@ -102,16 +124,18 @@ export default function Dashboard() {
   const [selectedIndicators, setSelectedIndicators] = useState([TECHNICAL_INDICATORS[0].id]);
   // Add metrics state
   const [metrics, setMetrics] = useState({
-    loss: '0',
-    confidence: '0',
+    loss: '0.00',
+    maePercent: '0.00',
+    confidence: '0.00',
     algorithmPerformance: {} as AlgorithmPerformance
   });
   
   // Initialize metrics after component mounts (client-side only)
   useEffect(() => {
-    // Generate random metrics only on the client side
+    // Generate initial metrics for algorithm performance
     setMetrics({
-      loss: (Math.random() * 3 + 0.5).toFixed(2),
+      loss: '0.00',
+      maePercent: '0.00',
       confidence: (Math.random() * 15 + 80).toFixed(2),
       algorithmPerformance: ALGORITHM_OPTIONS.reduce<AlgorithmPerformance>((acc, algorithm) => {
         acc[algorithm.id] = ((Math.random() * 20) + (algorithm.id === selectedAlgorithm.id ? 80 : 70)).toFixed(2);
@@ -211,99 +235,33 @@ export default function Dashboard() {
     setSelectedIndicators(indicators);
   };
 
-  // Calculate metrics based on predictions and historical data
+  // Calculate metrics whenever predictions or stock data changes
   useEffect(() => {
-    // Skip calculation if we don't have predictions yet
+    // Skip if we don't have enough data
     if (!predictions || predictions.length === 0 || !stockData || stockData.length === 0) {
-      setMetrics({
-        loss: '0',
-        confidence: '0',
-        algorithmPerformance: {}
-      });
       return;
     }
 
-    // Get the last known actual price
-    const lastPrice = stockData[stockData.length - 1].close;
-    
-    // Get the first predicted price (which should be for the next day after the last known price)
-    const predictedPrice = predictions[0].price;
-    
-    // Calculate price difference (loss)
-    const priceDiff = Math.abs(lastPrice - predictedPrice);
-    const loss = priceDiff.toFixed(2);
-    
-    // Calculate confidence level based on prediction interval width
-    const lastPrediction = predictions[predictions.length - 1];
-    const intervalRatio = (lastPrediction.upper - lastPrediction.lower) / lastPrediction.price;
-    
-    // Map interval ratio to confidence (inverse relationship)
-    // Narrower intervals (lower ratio) = higher confidence
-    const baseConfidence = 95 - (intervalRatio * 100);
-    // Clamp to reasonable range for financial models
-    const confidence = Math.min(95, Math.max(80, baseConfidence)).toFixed(2);
-    
-    // Calculate actual algorithm performance metrics
+    // Calculate algorithm performance metrics
     const algorithmPerformance = calculateAlgorithmPerformance(selectedAlgorithm.id, stockData);
     
     setMetrics({
-      loss,
-      confidence,
+      loss: '0.00',  // Keep these properties but set to default values to avoid breaking code
+      maePercent: '0.00',
+      confidence: algorithmPerformance[selectedAlgorithm.id] || '0.00',
       algorithmPerformance
     });
   }, [predictions, stockData, selectedAlgorithm.id]);
 
-  // Calculate algorithm performance based on known characteristics
+  // Calculate algorithm performance based on actual metrics
   const calculateAlgorithmPerformance = (algorithmId: string, data: StockDataPoint[]): AlgorithmPerformance => {
-    // Base metrics on volatility of the data
-    const volatility = calculateDataVolatility(data);
+    // Use the new service to calculate performance for all algorithms
+    const result = calculateAllAlgorithmPerformance(data);
     
-    // Different algorithms perform differently based on volatility
-    const algorithmCharacteristics: Record<string, { baseAccuracy: number, volatilityImpact: number }> = {
-      'xgboost': { baseAccuracy: 82, volatilityImpact: -0.8 },
-      'lstm': { baseAccuracy: 85, volatilityImpact: -0.5 },
-      'transformer': { baseAccuracy: 87, volatilityImpact: -0.3 },
-      'cnnlstm': { baseAccuracy: 84, volatilityImpact: -0.4 },
-      'ensemble': { baseAccuracy: 89, volatilityImpact: -0.2 },
-      'tddm': { baseAccuracy: 86, volatilityImpact: -0.6 },
-      'gan': { baseAccuracy: 83, volatilityImpact: -0.7 },
-      'arima': { baseAccuracy: 80, volatilityImpact: -1.0 },
-      'prophet': { baseAccuracy: 81, volatilityImpact: -0.9 },
-      'movingaverage': { baseAccuracy: 78, volatilityImpact: -1.2 }
-    };
-    
-    // Calculate accuracy for each algorithm
-    const result: AlgorithmPerformance = {};
-    
-    Object.keys(algorithmCharacteristics).forEach(id => {
-      const { baseAccuracy, volatilityImpact } = algorithmCharacteristics[id];
-      const accuracy = baseAccuracy + (volatilityImpact * volatility);
-      result[id] = Math.max(75, Math.min(95, accuracy)).toFixed(2);
-    });
-    
-    return result;
+    // Convert to the expected format
+    return result as AlgorithmPerformance;
   };
   
-  // Calculate data volatility
-  const calculateDataVolatility = (data: StockDataPoint[]): number => {
-    if (data.length < 10) return 1;
-    
-    const recentData = data.slice(-20);
-    const returns: number[] = [];
-    
-    for (let i = 1; i < recentData.length; i++) {
-      const dailyReturn = Math.log(recentData[i].close / recentData[i-1].close);
-      returns.push(dailyReturn);
-    }
-    
-    // Calculate standard deviation of returns
-    const mean = returns.reduce((sum, val) => sum + val, 0) / returns.length;
-    const squaredDiffs = returns.map(ret => Math.pow(ret - mean, 2));
-    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / squaredDiffs.length;
-    
-    return Math.sqrt(variance) * 100; // Convert to percentage
-  };
-
   // Get API key for status display
   const [apiKey, setApiKey] = useState('');
   
@@ -325,6 +283,7 @@ export default function Dashboard() {
             <ul className="flex space-x-6">
               <li><Link href="/" className="text-gray-700 hover:text-primary">Home</Link></li>
               <li><Link href="/dashboard" className="text-gray-700 hover:text-primary font-semibold">Dashboard</Link></li>
+              <li><Link href="/tuning" className="text-gray-700 hover:text-primary">Tuning</Link></li>
               <li><Link href="/algorithms" className="text-gray-700 hover:text-primary">Algorithms</Link></li>
               <li><Link href="/about" className="text-gray-700 hover:text-primary">About</Link></li>
             </ul>
@@ -335,7 +294,16 @@ export default function Dashboard() {
       {/* Dashboard Content */}
       <main className="container mx-auto px-4 py-8">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold">Stock Prediction Dashboard</h1>
+          <div>
+            <h1 className="text-3xl font-bold">Stock Prediction Dashboard</h1>
+            {params?.initialAlgorithm && (
+              <div className="flex items-center text-sm text-gray-600 mt-1">
+                <Link href="/dashboard" className="hover:text-primary">Dashboard</Link>
+                <span className="mx-2">›</span>
+                <span className="font-medium text-primary">{selectedAlgorithm.name}</span>
+              </div>
+            )}
+          </div>
           <ApiStatus apiKey={apiKey} />
         </div>
 
@@ -374,6 +342,7 @@ export default function Dashboard() {
               algorithms={ALGORITHM_OPTIONS}
               selectedAlgorithm={selectedAlgorithm}
               onAlgorithmChange={handleAlgorithmChange}
+              stockData={stockData}
             />
             
             {/* Algorithm Status Indicator */}
@@ -382,6 +351,25 @@ export default function Dashboard() {
                 requestedAlgorithm={selectedAlgorithm.id}
                 actualAlgorithm={actualAlgorithm}
               />
+            </div>
+            
+            {/* Quick Links to Algorithm Routes */}
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Quick Access Links:</h4>
+              <div className="flex flex-wrap gap-2">
+                {ALGORITHM_OPTIONS.map(algo => (
+                  <Link 
+                    key={algo.id}
+                    href={`/dashboard/${algo.id}`}
+                    className={`text-xs px-2 py-1 rounded ${selectedAlgorithm.id === algo.id 
+                      ? 'bg-primary text-white' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {algo.name}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -569,18 +557,13 @@ export default function Dashboard() {
           {/* Performance Metrics */}
           <div className="card">
             <h2 className="text-xl font-semibold mb-4">Algorithm Performance</h2>
-            <div className="grid grid-cols-2 gap-4 mb-6">
+            <div className="grid grid-cols-1 gap-4 mb-6">
               <div className="bg-gray-50 p-4 rounded">
-                <p className="text-sm text-gray-600">Loss</p>
+                <p className="text-sm text-gray-600">Accuracy</p>
                 <p className="text-2xl font-bold text-primary">
-                  ${metrics.loss}
+                  {metrics.algorithmPerformance[selectedAlgorithm.id] || "0.00"}%
                 </p>
-              </div>
-              <div className="bg-gray-50 p-4 rounded">
-                <p className="text-sm text-gray-600">Confidence Level</p>
-                <p className="text-2xl font-bold text-primary">
-                  {metrics.confidence}%
-                </p>
+                <p className="text-xs text-gray-500">Directional Precision</p>
               </div>
             </div>
             
@@ -590,26 +573,48 @@ export default function Dashboard() {
             </p>
             
             <div className="space-y-3">
-              {ALGORITHM_OPTIONS.map((algorithm) => (
-                <div key={algorithm.id} className="relative pt-1">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-sm font-medium text-gray-700">{algorithm.name}</span>
+              {ALGORITHM_OPTIONS.map((algorithm) => {
+                // Get the accuracy value for this algorithm
+                const accuracy = metrics.algorithmPerformance[algorithm.id] || "0.00";
+                
+                // Check if this is the selected algorithm to highlight it
+                const isSelected = algorithm.id === selectedAlgorithm.id;
+                
+                // Calculate the bar color based on accuracy value
+                let barColor = 'bg-gray-400';
+                if (isSelected) {
+                  barColor = 'bg-primary';
+                } else if (parseFloat(accuracy) >= 85) {
+                  barColor = 'bg-green-500';
+                } else if (parseFloat(accuracy) >= 80) {
+                  barColor = 'bg-blue-500';
+                } else if (parseFloat(accuracy) < 78) {
+                  barColor = 'bg-orange-400';
+                }
+                
+                return (
+                  <div key={algorithm.id} className="relative pt-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className={`text-sm font-medium ${isSelected ? 'text-primary' : 'text-gray-700'}`}>
+                          {algorithm.name}
+                        </span>
+                      </div>
+                      <div className={`text-sm ${isSelected ? 'text-primary font-medium' : 'text-gray-600'}`}>
+                        {accuracy}%
+                      </div>
                     </div>
-                    <div className="text-sm text-gray-600">
-                      {metrics.algorithmPerformance[algorithm.id] || "0.00"}%
+                    <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-200 mt-1">
+                      <div 
+                        style={{ 
+                          width: `${accuracy}%` 
+                        }}
+                        className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${barColor}`}
+                      ></div>
                     </div>
                   </div>
-                  <div className="overflow-hidden h-2 text-xs flex rounded bg-gray-200 mt-1">
-                    <div 
-                      style={{ 
-                        width: `${metrics.algorithmPerformance[algorithm.id] || 0}%` 
-                      }}
-                      className={`shadow-none flex flex-col text-center whitespace-nowrap text-white justify-center ${algorithm.id === selectedAlgorithm.id ? 'bg-primary' : 'bg-gray-400'}`}
-                    ></div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -620,7 +625,18 @@ export default function Dashboard() {
         <div className="container mx-auto px-4 text-center text-gray-600">
           <p>&copy; {new Date().getFullYear()} StockPred Master. All rights reserved.</p>
           <p className="text-sm mt-2">This app is for demonstration purposes only. Not financial advice.</p>
-          <p className="text-xs mt-2">Stock data powered by <a href="https://www.alphavantage.co/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Alpha Vantage</a>.</p>
+          <div className="text-xs mt-2 mb-1">
+            <span>Direct algorithm access: </span>
+            {ALGORITHM_OPTIONS.map((algo, i) => (
+              <span key={algo.id}>
+                <Link href={`/dashboard/${algo.id}`} className="text-blue-500 hover:underline">
+                  {algo.id}
+                </Link>
+                {i < ALGORITHM_OPTIONS.length - 1 && ", "}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs">Stock data powered by <a href="https://www.alphavantage.co/" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">Alpha Vantage</a>.</p>
         </div>
       </footer>
     </div>

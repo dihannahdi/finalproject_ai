@@ -5,6 +5,7 @@
 
 import * as tf from '@tensorflow/tfjs';
 import { StockDataPoint, PredictionPoint } from '@/app/lib/api';
+import { PredictionModel } from './index';
 
 export interface LSTMModelParams {
   timeSteps: number;           // Number of time steps to consider for prediction
@@ -21,7 +22,7 @@ export interface LSTMModelParams {
  */
 export const DEFAULT_LSTM_PARAMS: LSTMModelParams = {
   timeSteps: 10,
-  features: ['close'],
+  features: ['close', 'open', 'high', 'low', 'volume'],
   epochs: 20,
   batchSize: 32,
   learningRate: 0.001,
@@ -29,7 +30,7 @@ export const DEFAULT_LSTM_PARAMS: LSTMModelParams = {
   dropoutRate: 0.2
 };
 
-export class LSTMModel {
+export class LSTMModel implements PredictionModel {
   private model: tf.LayersModel | null = null;
   private params: LSTMModelParams;
   private inputScaler: MinMaxScaler;

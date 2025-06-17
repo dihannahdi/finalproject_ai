@@ -6,6 +6,7 @@
 
 import * as tf from '@tensorflow/tfjs';
 import { StockDataPoint, PredictionPoint } from '@/app/lib/api';
+import { PredictionModel } from './index';
 
 // Extended StockDataPoint interface with derived features
 interface ExtendedStockDataPoint extends StockDataPoint {
@@ -18,29 +19,27 @@ interface ExtendedStockDataPoint extends StockDataPoint {
 }
 
 export interface TDDMModelParams {
-  timeSteps: number;           // Number of time steps to consider for prediction (window size)
-  features: string[];          // Features to use for prediction
-  epochs: number;              // Number of training epochs
-  batchSize: number;           // Batch size for training
-  learningRate: number;        // Learning rate for optimizer
-  hiddenUnits: number[];       // Array defining hidden unit sizes
-  dropoutRate: number;         // Dropout rate for regularization
-  useAttention: boolean;       // Whether to use attention mechanism
-  useTDDMLayers: boolean;      // Whether to use specialized TDDM layers
-  temporalFeatureExtraction: boolean; // Enable temporal feature extraction
+  timeSteps: number;              // Number of time steps to consider
+  features: string[];             // Base features to use
+  epochs: number;                 // Number of training epochs
+  batchSize: number;              // Batch size for training
+  learningRate: number;           // Learning rate for optimizer
+  hiddenUnits: number[];          // Array defining hidden layer sizes
+  dropoutRate: number;            // Dropout rate for regularization
+  useAttention: boolean;          // Whether to use attention mechanism
+  useTDDMLayers: boolean;         // Whether to use TDDM-specific layers
+  temporalFeatureExtraction: boolean; // Whether to extract temporal features
 }
 
-/**
- * Default parameters for the TDDM model
- */
+// Default parameters for the TDDM model
 export const DEFAULT_TDDM_PARAMS: TDDMModelParams = {
-  timeSteps: 30,
+  timeSteps: 10,
   features: ['close', 'open', 'high', 'low', 'volume'],
-  epochs: 100,
+  epochs: 30,
   batchSize: 32,
   learningRate: 0.001,
-  hiddenUnits: [128, 64, 32],
-  dropoutRate: 0.3,
+  hiddenUnits: [50, 25],
+  dropoutRate: 0.2,
   useAttention: true,
   useTDDMLayers: true,
   temporalFeatureExtraction: true
@@ -169,8 +168,8 @@ function calculateStdDev(values: number[]): number {
 /**
  * Custom attention layer for time series data
  */
-class AttentionLayer {
-  private weights: tf.Tensor | null = null;
+class AttentionLayer extends tf.layers.Layer {
+  private attentionWeights: tf.Tensor | null = null;
   
   apply(inputs: tf.Tensor): tf.Tensor {
     // Self-attention mechanism
@@ -189,21 +188,21 @@ class AttentionLayer {
     const scaledScores = tf.div(scores, scaleFactor);
     
     // Apply softmax to get attention weights
-    this.weights = tf.softmax(scaledScores, -1);
+    this.attentionWeights = tf.softmax(scaledScores, -1);
     
     // Apply attention weights to values
-    const output = tf.matMul(this.weights, v);
+    const output = tf.matMul(this.attentionWeights, v);
     
     // Residual connection
     return tf.add(inputs, output);
   }
   
   getAttentionWeights(): tf.Tensor | null {
-    return this.weights;
+    return this.attentionWeights;
   }
 }
 
-export class TDDMModel {
+export class TDDMModel implements PredictionModel {
   private model: tf.LayersModel | null = null;
   private params: TDDMModelParams;
   private inputScaler: MinMaxScaler;

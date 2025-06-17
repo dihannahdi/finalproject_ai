@@ -124,9 +124,15 @@ export class CNNLSTMModel {
   private buildModel(inputShape: [number, number]): tf.LayersModel {
     const model = tf.sequential();
     
-    // Reshape input for CNN
+    // Calculate dimensions for CNN
+    const timeSteps = inputShape[0];
+    const features = inputShape[1];
+    
+    console.log(`[CNNLSTMModel] Building model with timeSteps=${timeSteps}, features=${features}`);
+    
+    // Reshape input for CNN - reshape to 4D tensor [batch, timeSteps, features, channels]
     model.add(tf.layers.reshape({
-      targetShape: [inputShape[0], inputShape[1], 1],
+      targetShape: [timeSteps, features, 1],
       inputShape: inputShape,
     }));
     
@@ -138,9 +144,19 @@ export class CNNLSTMModel {
       padding: 'same',
     }));
     
-    // Reshape for LSTM
+    // Reshape for LSTM - ensure dimensions are compatible
+    // After conv2d with 'same' padding, spatial dimensions remain the same
+    // New shape: [batch, timeSteps, features * cnnFilters]
     model.add(tf.layers.reshape({
-      targetShape: [inputShape[0], this.params.cnnFilters],
+      targetShape: [timeSteps, features * this.params.cnnFilters],
+    }));
+    
+    // Use a TimeDistributed Dense layer to reduce dimensionality
+    model.add(tf.layers.timeDistributed({
+      layer: tf.layers.dense({
+        units: this.params.lstmUnits[0],
+        activation: 'relu'
+      })
     }));
     
     // LSTM layers
@@ -168,6 +184,9 @@ export class CNNLSTMModel {
       loss: 'meanSquaredError',
       metrics: ['mse']
     });
+    
+    // Print model summary for debugging
+    model.summary();
     
     return model;
   }

@@ -2,12 +2,14 @@
  * Models index file to export all available prediction models
  */
 
-import LSTMModel, { LSTMModelParams } from './LSTMModel';
-import TransformerModel, { TransformerModelParams } from './TransformerModel';
-import CNNLSTMModel, { CNNLSTMModelParams } from './CNNLSTMModel';
-import EnsembleModel, { EnsembleModelParams } from './EnsembleModel';
-import TDDMModel, { TDDMModelParams } from './TDDMModel';
-import XGBoostModel, { XGBoostModelParams } from './XGBoostModel';
+import { LSTMModel, LSTMModelParams } from './LSTMModel';
+import { TransformerModel, TransformerModelParams } from './TransformerModel';
+import { CNNLSTMModel, CNNLSTMModelParams } from './CNNLSTMModel';
+import { EnsembleModel, EnsembleModelParams } from './EnsembleModel';
+import { TDDMModel, TDDMModelParams } from './TDDMModel';
+import { XGBoostModel, XGBoostModelParams } from './XGBoostModel';
+import { RandomForestModel, RandomForestModelParams } from './RandomForestModel';
+import { GradientBoostModel, GradientBoostModelParams } from './GradientBoostModel';
 import { StockDataPoint, PredictionPoint } from '@/app/lib/api';
 import { getFastModelConfig } from './config';
 
@@ -37,6 +39,26 @@ export function createModel(algorithm: string, params: any = {}) {
       return new TDDMModel(mergedParams);
     case 'xgboost':
       return new XGBoostModel(mergedParams);
+    case 'randomforest':
+      return new RandomForestModel(mergedParams);
+    case 'gradientboost':
+      return new GradientBoostModel(mergedParams);
+    case 'treesensemble':
+      // Special ensemble of tree-based models
+      const treesEnsembleParams: EnsembleModelParams = {
+        ...mergedParams,
+        subModels: {
+          lstm: false,
+          cnnlstm: false,
+          transformer: false,
+          xgboost: true,
+          randomforest: true,
+          gradientboost: true
+        },
+        ensembleMethod: 'weighted',
+        weights: [0.4, 0.3, 0.3] // XGBoost, RandomForest, GradientBoost
+      };
+      return new EnsembleModel(treesEnsembleParams);
     case 'gan':
       console.warn('GAN model selected. Currently using LSTM as a fallback since GAN is not fully implemented.');
       // Create a special version of LSTM that identifies as GAN in its predict method
@@ -62,8 +84,25 @@ export function createModel(algorithm: string, params: any = {}) {
   }
 }
 
+// Export interface for generic model
+export interface PredictionModel {
+  train: (data: StockDataPoint[]) => Promise<any>;
+  predict: (data: StockDataPoint[], days?: number) => Promise<PredictionPoint[]>;
+  saveModel: (modelName: string) => Promise<any>;
+  loadModel: (modelName: string) => Promise<void>;
+}
+
 // Export all models
-export { LSTMModel, TransformerModel, CNNLSTMModel, EnsembleModel, TDDMModel, XGBoostModel };
+export {
+  LSTMModel,
+  TransformerModel,
+  CNNLSTMModel,
+  EnsembleModel,
+  TDDMModel,
+  XGBoostModel,
+  RandomForestModel,
+  GradientBoostModel
+};
 
 // Export model parameter types
 export type { 
@@ -72,13 +111,7 @@ export type {
   CNNLSTMModelParams, 
   EnsembleModelParams,
   TDDMModelParams,
-  XGBoostModelParams
-};
-
-// Export interface for generic model
-export interface PredictionModel {
-  train: (data: StockDataPoint[]) => Promise<any>;
-  predict: (data: StockDataPoint[], days?: number) => Promise<PredictionPoint[]>;
-  saveModel: (modelName: string) => Promise<any>;
-  loadModel: (modelName: string) => Promise<void>;
-} 
+  XGBoostModelParams,
+  RandomForestModelParams,
+  GradientBoostModelParams
+}; 

@@ -6,9 +6,12 @@
 
 import * as tf from '@tensorflow/tfjs';
 import { StockDataPoint, PredictionPoint } from '@/app/lib/api';
-import LSTMModel from './LSTMModel';
-import CNNLSTMModel from './CNNLSTMModel';
-import TransformerModel from './TransformerModel';
+import { LSTMModel } from './LSTMModel';
+import { CNNLSTMModel } from './CNNLSTMModel';
+import { TransformerModel } from './TransformerModel';
+import { XGBoostModel } from './XGBoostModel';
+import { RandomForestModel } from './RandomForestModel';
+import { GradientBoostModel } from './GradientBoostModel';
 import { PredictionModel } from './index';
 
 export interface EnsembleModelParams {
@@ -18,6 +21,9 @@ export interface EnsembleModelParams {
     lstm?: boolean;                 // Include LSTM model
     cnnlstm?: boolean;              // Include CNN-LSTM model
     transformer?: boolean;          // Include Transformer model
+    xgboost?: boolean;              // Include XGBoost model
+    randomforest?: boolean;         // Include Random Forest model
+    gradientboost?: boolean;        // Include Gradient Boosting model
   };
   ensembleMethod: 'average' | 'weighted' | 'stacked'; // Method for combining predictions
   weights?: number[];               // Weights for each model (for weighted ensemble)
@@ -32,7 +38,10 @@ export const DEFAULT_ENSEMBLE_PARAMS: EnsembleModelParams = {
   subModels: {
     lstm: true,
     cnnlstm: true,
-    transformer: true
+    transformer: true,
+    xgboost: false,
+    randomforest: false,
+    gradientboost: false
   },
   ensembleMethod: 'weighted',
   weights: [0.3, 0.4, 0.3] // Weights for LSTM, CNN-LSTM, and Transformer, respectively
@@ -101,6 +110,39 @@ export class EnsembleModel implements PredictionModel {
         dropoutRate: 0.1
       });
       this.models.push(transformerModel);
+    }
+    
+    if (subModels.xgboost) {
+      console.log('🔍 Adding XGBoost model to ensemble');
+      const xgboostModel = new XGBoostModel({
+        numTrees: 100,
+        maxDepth: 3,
+        learningRate: 0.1,
+        featureSubsamplingRatio: 0.8
+      });
+      this.models.push(xgboostModel);
+    }
+    
+    if (subModels.randomforest) {
+      console.log('🔍 Adding Random Forest model to ensemble');
+      const randomForestModel = new RandomForestModel({
+        numTrees: 100,
+        maxDepth: 5,
+        featureSamplingRatio: 0.7,
+        dataSamplingRatio: 0.8
+      });
+      this.models.push(randomForestModel);
+    }
+    
+    if (subModels.gradientboost) {
+      console.log('🔍 Adding Gradient Boosting model to ensemble');
+      const gradientBoostModel = new GradientBoostModel({
+        numTrees: 100,
+        maxDepth: 4,
+        learningRate: 0.1,
+        subsampleRatio: 0.8
+      });
+      this.models.push(gradientBoostModel);
     }
     
     // Validate and adjust weights if necessary

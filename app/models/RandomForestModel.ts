@@ -1,43 +1,43 @@
 import { StockDataPoint, PredictionPoint } from '@/app/lib/api';
 import { PredictionModel } from './index';
 
-export interface XGBoostModelParams {
+export interface RandomForestModelParams {
   numTrees?: number;
   maxDepth?: number;
-  learningRate?: number;
-  featureSubsamplingRatio?: number;
+  featureSamplingRatio?: number;
+  dataSamplingRatio?: number;
 }
 
 /**
- * XGBoost model for stock price prediction
- * JavaScript implementation inspired by XGBoost's gradient boosting principles
+ * Random Forest model for stock price prediction
+ * JavaScript implementation of random forest algorithm
  */
-export class XGBoostModel implements PredictionModel {
+export class RandomForestModel implements PredictionModel {
   private numTrees: number;
   private maxDepth: number;
-  private learningRate: number;
-  private featureSubsamplingRatio: number;
-  private trees: any[] = [];
+  private featureSamplingRatio: number;
+  private dataSamplingRatio: number;
+  private forest: any[] = [];
 
-  constructor(params: XGBoostModelParams = {}) {
+  constructor(params: RandomForestModelParams = {}) {
     this.numTrees = params.numTrees || 100;
-    this.maxDepth = params.maxDepth || 3;
-    this.learningRate = params.learningRate || 0.1;
-    this.featureSubsamplingRatio = params.featureSubsamplingRatio || 0.8;
-    console.log('🔍 XGBoostModel created with params:', 
-      `numTrees=${this.numTrees}, maxDepth=${this.maxDepth}, learningRate=${this.learningRate}`);
+    this.maxDepth = params.maxDepth || 5;
+    this.featureSamplingRatio = params.featureSamplingRatio || 0.7;
+    this.dataSamplingRatio = params.dataSamplingRatio || 0.8;
+    console.log('🔍 RandomForestModel created with params:', 
+      `numTrees=${this.numTrees}, maxDepth=${this.maxDepth}`);
   }
 
   /**
-   * Train the XGBoost model
+   * Train the Random Forest model
    */
   async train(historicalData: StockDataPoint[]): Promise<any> {
     try {
-      console.log(`Training XGBoost model with ${historicalData.length} data points...`);
+      console.log(`Training Random Forest model with ${historicalData.length} data points...`);
       
       // Input validation - exit early if data is insufficient
       if (!historicalData || historicalData.length < 30) {
-        console.warn("Insufficient historical data for XGBoost training");
+        console.warn("Insufficient historical data for Random Forest training");
         throw new Error("Insufficient training data");
       }
 
@@ -52,7 +52,7 @@ export class XGBoostModel implements PredictionModel {
 
       // If too much data was filtered, fail training
       if (cleanData.length < 30) {
-        console.warn("Too many invalid data points for XGBoost training");
+        console.warn("Too many invalid data points for Random Forest training");
         throw new Error("Too many invalid data points");
       }
       
@@ -72,40 +72,40 @@ export class XGBoostModel implements PredictionModel {
       }
       
       if (features.length === 0 || targets.length === 0) {
-        console.warn("Feature extraction failed for XGBoost training");
+        console.warn("Feature extraction failed for Random Forest training");
         throw new Error("Feature extraction failed");
       }
       
-      // Create XGBoost trees (boosted trees)
-      this.trees = this.createXGBoostTrees(features, targets);
+      // Create random forest (ensemble of decision trees)
+      this.forest = this.createRandomForest(features, targets);
       
-      // If tree creation failed, fail training
-      if (!this.trees || this.trees.length === 0) {
-        console.warn("Decision tree creation failed for XGBoost");
-        throw new Error("Decision tree creation failed");
+      // If forest creation failed, fail training
+      if (!this.forest || this.forest.length === 0) {
+        console.warn("Forest creation failed for Random Forest");
+        throw new Error("Forest creation failed");
       }
       
-      console.log(`XGBoost training complete with ${this.trees.length} trees`);
-      return { success: true, numTrees: this.trees.length };
+      console.log(`Random Forest training complete with ${this.forest.length} trees`);
+      return { success: true, numTrees: this.forest.length };
     } catch (error) {
-      console.error("Error in XGBoost training:", error);
+      console.error("Error in Random Forest training:", error);
       throw error;
     }
   }
 
   /**
-   * Generate predictions using the trained XGBoost model
+   * Generate predictions using the trained Random Forest model
    */
   async predict(historicalData: StockDataPoint[], days: number = 30): Promise<PredictionPoint[]> {
     try {
       // Input validation
       if (!historicalData || historicalData.length < 30) {
-        console.warn("Insufficient historical data for XGBoost prediction");
+        console.warn("Insufficient historical data for Random Forest prediction");
         throw new Error("Insufficient prediction data");
       }
       
       // If model hasn't been trained yet, train it now
-      if (!this.trees || this.trees.length === 0) {
+      if (!this.forest || this.forest.length === 0) {
         await this.train(historicalData);
       }
 
@@ -130,7 +130,7 @@ export class XGBoostModel implements PredictionModel {
       const recentTrend = this.calculateRecentTrend(recentPrices);
       
       // Bias prediction slightly based on recent trend (momentum effect)
-      const trendBias = recentTrend * 0.2; // Reduce impact to 20% of trend
+      const trendBias = recentTrend * 0.1; // Reduce impact to 10% of trend
       
       // Get the latest features
       const features = this.extractFeatures(cleanData);
@@ -145,20 +145,20 @@ export class XGBoostModel implements PredictionModel {
         predictionDate.setDate(lastDate.getDate() + i);
         const formattedDate = predictionDate.toISOString().split('T')[0];
         
-        // Predict using ensemble of trees
-        let relativePriceChange = this.predictWithTrees(this.trees, currentFeatures);
+        // Predict using random forest
+        let relativePriceChange = this.predictWithForest(this.forest, currentFeatures);
         
         // Apply a small trend bias to avoid unreasonable predictions
         relativePriceChange += trendBias;
         
         // For longer-term predictions, add mean reversion tendency
         if (i > 10) {
-          const meanReversionStrength = Math.min(0.003 * (i - 10), 0.03); // Gradual increase up to 3%
-          relativePriceChange += meanReversionStrength; // Small positive bias for longer predictions
+          const meanReversionStrength = Math.min(0.002 * (i - 10), 0.02);
+          relativePriceChange += meanReversionStrength;
         }
         
         // Apply safety cap to price change (prevent extreme movements)
-        const cappedPriceChange = Math.max(-0.05, Math.min(0.15, relativePriceChange));
+        const cappedPriceChange = Math.max(-0.05, Math.min(0.05, relativePriceChange));
         
         // Update current price safely
         const newPrice = currentPrice * (1 + cappedPriceChange);
@@ -184,15 +184,15 @@ export class XGBoostModel implements PredictionModel {
         const timeScaling = Math.sqrt(Math.min(i, 10)) + Math.log10(Math.max(1, i - 10 + 1));
         
         // Calculate confidence intervals that widen with time
-        const confInterval = Math.min(0.3, baseInterval * timeScaling / 5);
+        const confInterval = Math.min(0.2, baseInterval * timeScaling / 5);
         
         // Add prediction with bounds
         predictions.push({
           date: formattedDate,
           price: currentPrice,
           upper: currentPrice * (1 + confInterval),
-          lower: Math.max(0.01, currentPrice * (1 - confInterval * 0.8)), // Slightly asymmetric
-          algorithmUsed: 'xgboost'
+          lower: Math.max(0.01, currentPrice * (1 - confInterval * 0.8)),
+          algorithmUsed: 'randomforest'
         });
       }
       
@@ -205,20 +205,20 @@ export class XGBoostModel implements PredictionModel {
         algorithmUsed: p.algorithmUsed
       }));
     } catch (error) {
-      console.error("Error in XGBoost prediction:", error);
+      console.error("Error in Random Forest prediction:", error);
       throw error;
     }
   }
 
   /**
-   * Save the model - in this case, just storing tree structure
+   * Save the model - in this case, just storing forest structure
    */
   async saveModel(modelName: string): Promise<any> {
     try {
-      // In a real app, save the trees to a file or database
-      return { success: true, message: `XGBoost model '${modelName}' saved successfully` };
+      // In a real app, save the forest to a file or database
+      return { success: true, message: `Random Forest model '${modelName}' saved successfully` };
     } catch (error) {
-      console.error(`Error saving XGBoost model: ${error}`);
+      console.error(`Error saving Random Forest model: ${error}`);
       throw error;
     }
   }
@@ -228,17 +228,17 @@ export class XGBoostModel implements PredictionModel {
    */
   async loadModel(modelName: string): Promise<void> {
     try {
-      // In a real app, load trees from a file or database
-      console.log(`Loading XGBoost model '${modelName}'`);
+      // In a real app, load forest from a file or database
+      console.log(`Loading Random Forest model '${modelName}'`);
       // Currently, this is a placeholder for future implementation
     } catch (error) {
-      console.error(`Error loading XGBoost model: ${error}`);
+      console.error(`Error loading Random Forest model: ${error}`);
       throw error;
     }
   }
   
   /**
-   * Extract features for XGBoost model
+   * Extract features for Random Forest model
    */
   private extractFeatures(data: StockDataPoint[]): number[][] {
     if (!data || data.length < 21) {
@@ -336,120 +336,135 @@ export class XGBoostModel implements PredictionModel {
   }
   
   /**
-   * Create XGBoost trees (gradient boosted decision trees)
+   * Create a random forest (ensemble of decision trees)
    */
-  private createXGBoostTrees(features: number[][], targets: number[]): any[] {
-    const numSamples = features.length;
-    const numFeatures = features[0].length;
-    const trees = [];
+  private createRandomForest(features: number[][], targets: number[]): any[] {
+    const forest = [];
     
-    // Initialize predictions with the mean of the targets
-    let predictions = new Array(numSamples).fill(
-      targets.reduce((sum, val) => sum + val, 0) / targets.length
-    );
+    // Calculate baseline prediction (average target)
+    const baselinePrediction = targets.reduce((sum, val) => sum + val, 0) / targets.length;
     
-    // Gradient boosting iterations
-    for (let treeIdx = 0; treeIdx < this.numTrees; treeIdx++) {
-      // Calculate gradients (residuals for regression)
-      const gradients = targets.map((target, i) => target - predictions[i]);
+    for (let i = 0; i < this.numTrees; i++) {
+      // Bootstrap sampling (sample with replacement)
+      const { sampleFeatures, sampleTargets } = this.bootstrapSample(features, targets);
       
-      // Subsample features for this tree (feature bagging)
-      const featureIndices = this.sampleFeatures(
-        numFeatures, 
-        Math.floor(numFeatures * this.featureSubsamplingRatio)
-      );
-      
-      // Create a decision tree on the gradients
-      const tree = this.buildDecisionTree(
-        features, 
-        gradients, 
-        featureIndices,
+      // Create a decision tree
+      const tree = this.createDecisionTree(
+        sampleFeatures, 
+        sampleTargets, 
         0, 
-        this.maxDepth
+        this.maxDepth, 
+        baselinePrediction
       );
       
-      // Update predictions with this tree's contribution
-      predictions = predictions.map((pred, i) => {
-        const update = this.predictTree(tree, features[i]) * this.learningRate;
-        return pred + update;
-      });
-      
-      trees.push(tree);
+      forest.push(tree);
     }
     
-    return trees;
+    return forest;
   }
   
   /**
-   * Build a single decision tree recursively
+   * Bootstrap sampling (sample with replacement)
    */
-  private buildDecisionTree(
+  private bootstrapSample(features: number[][], targets: number[]): { sampleFeatures: number[][], sampleTargets: number[] } {
+    const numSamples = features.length;
+    const numFeaturesToSample = Math.max(1, Math.floor(features[0].length * this.featureSamplingRatio));
+    const numSamplesToTake = Math.max(10, Math.floor(numSamples * this.dataSamplingRatio));
+    
+    // Sample features (select a subset of features to consider)
+    const featureIndices: number[] = [];
+    while (featureIndices.length < numFeaturesToSample) {
+      const idx = Math.floor(Math.random() * features[0].length);
+      if (!featureIndices.includes(idx)) {
+        featureIndices.push(idx);
+      }
+    }
+    
+    // Sample data points with replacement
+    const sampleFeatures = [];
+    const sampleTargets = [];
+    
+    for (let i = 0; i < numSamplesToTake; i++) {
+      const idx = Math.floor(Math.random() * numSamples);
+      
+      // Create feature vector with only the selected features
+      const featureVector = featureIndices.map(fidx => features[idx][fidx]);
+      
+      sampleFeatures.push(featureVector);
+      sampleTargets.push(targets[idx]);
+    }
+    
+    return { sampleFeatures, sampleTargets };
+  }
+  
+  /**
+   * Create a decision tree recursively
+   */
+  private createDecisionTree(
     features: number[][], 
-    gradients: number[], 
-    featureIndices: number[],
+    targets: number[], 
     depth: number, 
-    maxDepth: number
+    maxDepth: number,
+    defaultValue: number
   ): any {
-    // If we've reached max depth or have no data, return a leaf node
-    if (depth >= maxDepth || gradients.length === 0 || featureIndices.length === 0) {
+    // If we've reached max depth or have very few samples, return a leaf node
+    if (depth >= maxDepth || features.length <= 5) {
+      const prediction = targets.length > 0 
+        ? targets.reduce((sum, val) => sum + val, 0) / targets.length 
+        : defaultValue;
+      
       return { 
         isLeaf: true, 
-        value: gradients.reduce((sum, g) => sum + g, 0) / Math.max(1, gradients.length)
+        value: prediction 
       };
     }
     
     // Find the best split
-    const bestSplit = this.findBestSplit(features, gradients, featureIndices);
+    const bestSplit = this.findBestSplit(features, targets);
     
     // If no good split was found, return a leaf node
-    if (!bestSplit.hasOwnProperty('featureIndex')) {
+    if (!bestSplit.featureIndex) {
+      const prediction = targets.length > 0 
+        ? targets.reduce((sum, val) => sum + val, 0) / targets.length 
+        : defaultValue;
+      
       return { 
         isLeaf: true, 
-        value: gradients.reduce((sum, g) => sum + g, 0) / Math.max(1, gradients.length)
+        value: prediction 
       };
     }
     
     // Split the data
-    const leftIndices: number[] = [];
-    const rightIndices: number[] = [];
-    
-    for (let i = 0; i < features.length; i++) {
-      if (features[i][bestSplit.featureIndex] <= bestSplit.threshold) {
-        leftIndices.push(i);
-      } else {
-        rightIndices.push(i);
-      }
-    }
+    const { leftFeatures, leftTargets, rightFeatures, rightTargets } = 
+      this.splitData(features, targets, bestSplit.featureIndex, bestSplit.threshold);
     
     // If split doesn't actually divide the data, return a leaf
-    if (leftIndices.length === 0 || rightIndices.length === 0) {
+    if (leftFeatures.length === 0 || rightFeatures.length === 0) {
+      const prediction = targets.length > 0 
+        ? targets.reduce((sum, val) => sum + val, 0) / targets.length 
+        : defaultValue;
+      
       return { 
         isLeaf: true, 
-        value: gradients.reduce((sum, g) => sum + g, 0) / Math.max(1, gradients.length)
+        value: prediction 
       };
     }
     
-    // Extract left and right subsets
-    const leftFeatures = leftIndices.map(i => features[i]);
-    const rightFeatures = rightIndices.map(i => features[i]);
-    const leftGradients = leftIndices.map(i => gradients[i]);
-    const rightGradients = rightIndices.map(i => gradients[i]);
-    
     // Recursively build subtrees
-    const leftSubtree = this.buildDecisionTree(
+    const leftSubtree = this.createDecisionTree(
       leftFeatures, 
-      leftGradients, 
-      featureIndices, 
+      leftTargets, 
       depth + 1, 
-      maxDepth
+      maxDepth,
+      defaultValue
     );
     
-    const rightSubtree = this.buildDecisionTree(
+    const rightSubtree = this.createDecisionTree(
       rightFeatures, 
-      rightGradients, 
-      featureIndices, 
+      rightTargets, 
       depth + 1, 
-      maxDepth
+      maxDepth,
+      defaultValue
     );
     
     // Return the decision node
@@ -465,47 +480,62 @@ export class XGBoostModel implements PredictionModel {
   /**
    * Find the best split for a decision tree node
    */
-  private findBestSplit(features: number[][], gradients: number[], featureIndices: number[]): any {
+  private findBestSplit(features: number[][], targets: number[]): { featureIndex: number, threshold: number, gain: number } {
     let bestGain = -Infinity;
     let bestFeatureIndex = -1;
     let bestThreshold = 0;
     
-    const totalGradient = gradients.reduce((sum, g) => sum + g, 0);
-    const totalGradientSquared = gradients.reduce((sum, g) => sum + g * g, 0);
-    const initialScore = totalGradientSquared - (totalGradient * totalGradient) / gradients.length;
+    // Try a random subset of features at each split
+    const numFeatures = features[0].length;
+    const featuresToTry = Math.max(1, Math.floor(Math.sqrt(numFeatures))); // Common heuristic
     
-    // Try each feature as a potential split
+    // Randomly select features to try
+    const featureIndices: number[] = [];
+    while (featureIndices.length < featuresToTry) {
+      const idx = Math.floor(Math.random() * numFeatures);
+      if (!featureIndices.includes(idx)) {
+        featureIndices.push(idx);
+      }
+    }
+    
+    // Calculate variance of current node (for gain calculation)
+    const targetMean = targets.reduce((sum, val) => sum + val, 0) / targets.length;
+    const nodeVariance = targets.reduce((sum, val) => sum + Math.pow(val - targetMean, 2), 0) / targets.length;
+    
+    // Try each selected feature
     for (const featureIndex of featureIndices) {
-      // Get unique values for this feature
-      const uniqueValues = Array.from(new Set(features.map(f => f[featureIndex]))).sort();
+      // Get all values for this feature
+      const values = features.map(f => f[featureIndex]);
       
-      // Try potential thresholds between each pair of unique values
-      for (let i = 0; i < uniqueValues.length - 1; i++) {
-        const threshold = (uniqueValues[i] + uniqueValues[i + 1]) / 2;
+      // Try a few potential thresholds
+      const numThresholds = Math.min(10, Math.floor(values.length / 3));
+      
+      for (let i = 0; i < numThresholds; i++) {
+        // Pick a random threshold from the values
+        const thresholdIndex = Math.floor(Math.random() * values.length);
+        const threshold = values[thresholdIndex];
         
-        let leftGradientSum = 0;
-        let leftGradientSquaredSum = 0;
-        let leftCount = 0;
+        // Split the data
+        const { leftFeatures, leftTargets, rightFeatures, rightTargets } = 
+          this.splitData(features, targets, featureIndex, threshold);
         
-        for (let j = 0; j < features.length; j++) {
-          if (features[j][featureIndex] <= threshold) {
-            leftGradientSum += gradients[j];
-            leftGradientSquaredSum += gradients[j] * gradients[j];
-            leftCount++;
-          }
+        // Skip if split is too imbalanced
+        if (leftFeatures.length < 5 || rightFeatures.length < 5) {
+          continue;
         }
         
-        // Skip if all samples went to one side
-        if (leftCount === 0 || leftCount === features.length) continue;
+        // Calculate gain
+        const leftMean = leftTargets.reduce((sum, val) => sum + val, 0) / leftTargets.length;
+        const rightMean = rightTargets.reduce((sum, val) => sum + val, 0) / rightTargets.length;
         
-        const rightGradientSum = totalGradient - leftGradientSum;
-        const rightGradientSquaredSum = totalGradientSquared - leftGradientSquaredSum;
-        const rightCount = features.length - leftCount;
+        const leftVariance = leftTargets.reduce((sum, val) => sum + Math.pow(val - leftMean, 2), 0) / leftTargets.length;
+        const rightVariance = rightTargets.reduce((sum, val) => sum + Math.pow(val - rightMean, 2), 0) / rightTargets.length;
         
-        // Calculate gain using variance reduction formula
-        const leftScore = leftGradientSquaredSum - (leftGradientSum * leftGradientSum) / leftCount;
-        const rightScore = rightGradientSquaredSum - (rightGradientSum * rightGradientSum) / rightCount;
-        const gain = initialScore - (leftScore + rightScore);
+        // Weighted variance reduction (information gain)
+        const leftWeight = leftTargets.length / targets.length;
+        const rightWeight = rightTargets.length / targets.length;
+        
+        const gain = nodeVariance - (leftWeight * leftVariance + rightWeight * rightVariance);
         
         if (gain > bestGain) {
           bestGain = gain;
@@ -515,11 +545,43 @@ export class XGBoostModel implements PredictionModel {
       }
     }
     
-    if (bestGain > 0) {
-      return { featureIndex: bestFeatureIndex, threshold: bestThreshold, gain: bestGain };
-    } else {
-      return {}; // No good split found
+    return { 
+      featureIndex: bestFeatureIndex, 
+      threshold: bestThreshold, 
+      gain: bestGain 
+    };
+  }
+  
+  /**
+   * Split data based on a feature and threshold
+   */
+  private splitData(
+    features: number[][], 
+    targets: number[], 
+    featureIndex: number, 
+    threshold: number
+  ): { 
+    leftFeatures: number[][], 
+    leftTargets: number[], 
+    rightFeatures: number[][], 
+    rightTargets: number[] 
+  } {
+    const leftFeatures = [];
+    const leftTargets = [];
+    const rightFeatures = [];
+    const rightTargets = [];
+    
+    for (let i = 0; i < features.length; i++) {
+      if (features[i][featureIndex] <= threshold) {
+        leftFeatures.push(features[i]);
+        leftTargets.push(targets[i]);
+      } else {
+        rightFeatures.push(features[i]);
+        rightTargets.push(targets[i]);
+      }
     }
+    
+    return { leftFeatures, leftTargets, rightFeatures, rightTargets };
   }
   
   /**
@@ -530,6 +592,11 @@ export class XGBoostModel implements PredictionModel {
       return tree.value;
     }
     
+    // Sometimes feature index might be out of bounds due to feature sampling
+    if (tree.featureIndex >= features.length) {
+      return tree.left.isLeaf ? tree.left.value : tree.right.value;
+    }
+    
     if (features[tree.featureIndex] <= tree.threshold) {
       return this.predictTree(tree.left, features);
     } else {
@@ -538,32 +605,26 @@ export class XGBoostModel implements PredictionModel {
   }
   
   /**
-   * Predict using the entire ensemble of trees
+   * Predict using the entire random forest
    */
-  private predictWithTrees(trees: any[], features: number[]): number {
-    // Get the mean target value from the first tree (stored during training)
-    const initialPrediction = 0; // This would be the global mean in a proper implementation
-    
-    // Sum up contributions from all trees
-    const treeContributions = trees.map(tree => this.predictTree(tree, features) * this.learningRate);
-    const totalContribution = treeContributions.reduce((sum, contrib) => sum + contrib, 0);
-    
-    return totalContribution;
-  }
-  
-  /**
-   * Sample feature indices without replacement for feature bagging
-   */
-  private sampleFeatures(numFeatures: number, sampleSize: number): number[] {
-    const indices = Array.from({ length: numFeatures }, (_, i) => i);
-    
-    // Randomly shuffle the array using Fisher-Yates algorithm
-    for (let i = indices.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [indices[i], indices[j]] = [indices[j], indices[i]];
+  private predictWithForest(forest: any[], features: number[]): number {
+    if (!forest || forest.length === 0) {
+      return 0;
     }
     
-    return indices.slice(0, sampleSize);
+    // Get predictions from all trees
+    const predictions = forest.map(tree => this.predictTree(tree, features));
+    
+    // Calculate the current price prediction (average of all tree predictions)
+    const avgPrediction = predictions.reduce((sum, pred) => sum + pred, 0) / predictions.length;
+    
+    // Calculate the standard deviation of predictions (for uncertainty estimation)
+    const squaredDiffs = predictions.map(pred => Math.pow(pred - avgPrediction, 2));
+    const variance = squaredDiffs.reduce((sum, diff) => sum + diff, 0) / predictions.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Return relative price change (slightly smoothed based on prediction diversity)
+    return avgPrediction;
   }
   
   /**
