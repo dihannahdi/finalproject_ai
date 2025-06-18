@@ -30,6 +30,10 @@ export const DEFAULT_LSTM_PARAMS: LSTMModelParams = {
   dropoutRate: 0.2
 };
 
+/**
+ * LSTMModel class implementing the PredictionModel interface
+ * Handles training, prediction, and model persistence
+ */
 export class LSTMModel implements PredictionModel {
   private model: tf.LayersModel | null = null;
   private params: LSTMModelParams;
